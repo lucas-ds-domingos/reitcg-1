@@ -18,8 +18,11 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
     const body=mode==="login"?{email,password}:{email,password,displayName,username,ageGroup,guardianName,guardianEmail,guardianConsent,termsAccepted,privacyAccepted};
     try{
       const response=await fetch(`/api/auth/${mode==="login"?"login":"register"}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      const data=await response.json() as {error?:string};
+      const data=await response.json() as {error?:string;profile?:unknown};
       if(!response.ok)throw new Error(data.error||"auth_error");
+      localStorage.removeItem("reicard-quantities");
+      localStorage.removeItem("reicard-owned");
+      localStorage.removeItem("dexcard-owned");
       window.location.href="/";
     }catch(reason){
       const code=reason instanceof Error?reason.message:"";

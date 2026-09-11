@@ -23,6 +23,7 @@ export async function POST(request:Request){
       sql`INSERT INTO auth_credentials (user_id,password_hash,created_at,updated_at) VALUES (${id},${passwordHash},${now},${now})`,
     ]);
     const session=await createSession(id);
-    return Response.json({ok:true},{status:201,headers:{"Set-Cookie":sessionCookie(session.token,session.maxAge),"Cache-Control":"no-store"}});
+    const profile={id,username,displayName,email,ageGroup,guardianConsent:ageGroup!=="adult",guardianName:ageGroup==="adult"?null:guardianName,guardianEmail:ageGroup==="adult"?null:guardianEmail,termsAccepted:true,privacyAccepted:true,termsVersion:"2026-09-11",consentAcceptedAt:now};
+    return Response.json({ok:true,profile},{status:201,headers:{"Set-Cookie":sessionCookie(session.token,session.maxAge),"Cache-Control":"no-store"}});
   }catch{return Response.json({error:"email_or_username_unavailable"},{status:409})}
 }
