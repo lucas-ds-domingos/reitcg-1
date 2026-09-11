@@ -31,12 +31,17 @@ export async function POST(request:Request){
   
   const sql=getSql(),id=crypto.randomUUID(),now=new Date().toISOString(),passwordHash=await hashPassword(password);
   try{
-    await sql.transaction([
-      sql`INSERT INTO profiles (id,username,display_name,email,age_group,guardian_consent,guardian_name,guardian_email,terms_accepted,privacy_accepted,terms_version,consent_accepted_at,created_at,updated_at) VALUES (${id},${username},${displayName},${email},${ageGroup},${ageGroup==="adult"?false:true},${ageGroup==="adult"?null:guardianName},${ageGroup==="adult"?null:guardianEmail},true,true,'2026-09-11',${now},${now},${now})`,
-      sql`INSERT INTO auth_credentials (user_id,password_hash,created_at,updated_at) VALUES (${id},${passwordHash},${now},${now})`,
-    ]);
+    // Insert profile with explicit ageGroup value
+    await sql`INSERT INTO profiles (id,username,display_name,email,age_group,guardian_consent,guardian_name,guardian_email,terms_accepted,privacy_accepted,terms_version,consent_accepted_at,created_at,updated_at) VALUES (${id},${username},${displayName},${email},${ageGroup},${ageGroup==="adult"?false:true},${ageGroup==="adult"?null:guardianName},${ageGroup==="adult"?null:guardianEmail},true,true,'2026-09-11',${now},${now},${now})`;
+    
+    // Insert auth credentials
+    await sql`INSERT INTO auth_credentials (user_id,password_hash,created_at,updated_at) VALUES (${id},${passwordHash},${now},${now})`;
+    
     const session=await createSession(id);
     const profile={id,username,displayName,email,ageGroup:ageGroup as "child"|"teen"|"adult",guardianConsent:ageGroup!=="adult",guardianName:ageGroup==="adult"?null:guardianName,guardianEmail:ageGroup==="adult"?null:guardianEmail,termsAccepted:true,privacyAccepted:true,termsVersion:"2026-09-11",consentAcceptedAt:now};
     return Response.json({ok:true,profile},{status:201,headers:{"Set-Cookie":sessionCookie(session.token,session.maxAge),"Cache-Control":"no-store"}});
-  }catch{return Response.json({error:"email_or_username_unavailable"},{status:409})}
+  }catch(error){
+    console.error("Registration error:",error);
+    return Response.json({error:"email_or_username_unavailable"},{status:409})
+  }
 }
