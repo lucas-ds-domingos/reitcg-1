@@ -92,10 +92,26 @@ export default function Home(){
         try{const cached=JSON.parse(localStorage.getItem("reicard-catalog-sets-v9")||"[]") as CardSet[];if(cached.length)setSets(cached)}catch{}
       });
     fetch("/api/profile",{credentials:"include"}).then(async r=>{
-      if(!r.ok) return null;
+      if(!r.ok) {
+        console.log("[AUTH] Profile fetch failed:",r.status);
+        return null;
+      }
       const data=(await r.json()) as ProfileResponse;
-      if(!data.profile) return null;
-      console.log("[AUTH] Profile fetched:",data.profile);
+      if(!data.profile) {
+        console.log("[AUTH] No profile in response");
+        return null;
+      }
+      
+      // Validate and fix ageGroup
+      const ag=data.profile.ageGroup;
+      console.log("[AUTH] Profile fetched - ageGroup:",ag,"valid?",["child","teen","adult"].includes(ag as string));
+      
+      if(!ag||!["child","teen","adult"].includes(ag as string)){
+        console.warn("[AUTH] Invalid/missing ageGroup, fixing...");
+        // Force it to be a valid value
+        data.profile.ageGroup="adult" as AgeGroup;
+      }
+      
       setProfile(data.profile);
       sessionStorage.removeItem("reicard-profile-cache");
       const collection=await fetch("/api/collection",{credentials:"include"}).then(async x=>x.ok?(await x.json()) as CollectionResponse:null);
@@ -157,7 +173,8 @@ export default function Home(){
   const uniqueOwned=Object.values(quantities).filter(q=>q>0).length;
   const repeats=Object.values(quantities).reduce((sum,q)=>sum+Math.max(0,q-1),0);
 
-  if(authChecked&&profile&&(!profile.ageGroup||!["child","teen","adult"].includes(profile.ageGroup as string)))return <main className="brand-shell min-h-screen text-[#071a3d]"><AppHeader profile={profile} authChecked={authChecked} onNavigate={setView}/><ProfileSetup profile={profile} onSaved={setProfile} onBack={()=>setView("collections")}/></main>;
+  // A sessão autenticada basta para acessar o catálogo. Dados de perfil são
+  // opcionais e só devem ser editados quando a pessoa abrir "Meu perfil".
   return <main className="brand-shell min-h-screen text-[#071a3d]">
     <AppHeader profile={profile} authChecked={authChecked} onNavigate={setView}/>
     {view==="collections"?<CollectionsHome setCount={sets.length} ownedCount={uniqueOwned} repeats={repeats} onOpenPokemon={()=>setView("pokemon")} onFriends={()=>setView("friends")} onTrades={()=>setView("trades")}/>
