@@ -24,7 +24,7 @@ export function ShareCollection({loggedIn,set,cards,quantities}:{loggedIn:boolea
   const missing=useMemo<SharedCard[]>(()=>cards.filter(card=>(quantities[card.id]||0)===0).map(card=>({cardId:card.id,name:card.name,number:numberFor(card,set),image:card.image,quantity:0,kind:"missing"})),[cards,quantities,set]);
   const selected=mode==="repeated"?repeated:mode==="missing"?missing:[...repeated,...missing];
 
-  useEffect(()=>{if(open&&loggedIn)fetch("/api/shares").then(async response=>response.ok?(await response.json()) as {friends?:Friend[]}:null).then(data=>setFriends(data?.friends??[])).catch(()=>{})},[open,loggedIn]);
+  useEffect(()=>{if(open&&loggedIn)fetch("/api/shares",{credentials:"include"}).then(async response=>response.ok?(await response.json()) as {friends?:Friend[]}:null).then(data=>setFriends(data?.friends??[])).catch(()=>{})},[open,loggedIn]);
 
   const whatsapp=useMemo(()=>{
     const title=mode==="repeated"?"Cartas repetidas para troca":mode==="missing"?"Cartas que estão faltando":"Cartas repetidas e faltantes";
@@ -38,7 +38,7 @@ export function ShareCollection({loggedIn,set,cards,quantities}:{loggedIn:boolea
     if(!friendId||!selected.length)return;
     setSending(true);setMessage("");
     try{
-      const response=await fetch("/api/shares",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({recipientId:friendId,setId:set.id,setName:set.name,shareType:mode,cards:selected})});
+      const response=await fetch("/api/shares",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({recipientId:friendId,setId:set.id,setName:set.name,shareType:mode,cards:selected}),credentials:"include"});
       if(!response.ok)throw new Error("share_error");
       setMessage("Lista enviada ao amigo no ReiCard.");
     }catch{setMessage("Não foi possível enviar agora. Tente novamente.")}

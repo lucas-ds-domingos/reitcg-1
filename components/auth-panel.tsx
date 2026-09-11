@@ -42,7 +42,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
       }
     }
     try{
-      const response=await fetch(`/api/auth/${mode==="login"?"login":"register"}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const response=await fetch(`/api/auth/${mode==="login"?"login":"register"}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"include"});
       const data=await response.json() as {error?:string;profile?:unknown};
       if(!response.ok)throw new Error(data.error||"auth_error");
       
