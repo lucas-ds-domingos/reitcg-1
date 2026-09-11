@@ -10,10 +10,10 @@ export async function POST(request:Request){
   const password=body?.password||"";
   const displayName=(body?.displayName||"").trim().slice(0,40);
   const username=(body?.username||"").trim().toLowerCase().replace(/[^a-z0-9_]/g,"").slice(0,20);
-  const ageGroup=body?.ageGroup;
+  const ageGroup=body?.ageGroup||"";
   const guardianName=(body?.guardianName||"").trim().slice(0,80);
   const guardianEmail=(body?.guardianEmail||"").trim().toLowerCase().slice(0,160);
-  if(!/^\S+@\S+\.\S+$/.test(email)||!validPassword(password)||displayName.length<2||username.length<3||!(["child","teen","adult"].includes(ageGroup||"")))return Response.json({error:"invalid_registration"},{status:400});
+  if(!/^\S+@\S+\.\S+$/.test(email)||!validPassword(password)||displayName.length<2||username.length<3||!(["child","teen","adult"].includes(ageGroup)))return Response.json({error:"invalid_registration"},{status:400});
   if(body?.termsAccepted!==true||body.privacyAccepted!==true)return Response.json({error:"legal_acceptance_required"},{status:400});
   if(ageGroup!=="adult"&&(body.guardianConsent!==true||guardianName.length<3||!/^\S+@\S+\.\S+$/.test(guardianEmail)))return Response.json({error:"guardian_required"},{status:400});
   const sql=getSql(),id=crypto.randomUUID(),now=new Date().toISOString(),passwordHash=await hashPassword(password);
@@ -23,7 +23,7 @@ export async function POST(request:Request){
       sql`INSERT INTO auth_credentials (user_id,password_hash,created_at,updated_at) VALUES (${id},${passwordHash},${now},${now})`,
     ]);
     const session=await createSession(id);
-    const profile={id,username,displayName,email,ageGroup,guardianConsent:ageGroup!=="adult",guardianName:ageGroup==="adult"?null:guardianName,guardianEmail:ageGroup==="adult"?null:guardianEmail,termsAccepted:true,privacyAccepted:true,termsVersion:"2026-09-11",consentAcceptedAt:now};
+    const profile={id,username,displayName,email,ageGroup:ageGroup as "child"|"teen"|"adult",guardianConsent:ageGroup!=="adult",guardianName:ageGroup==="adult"?null:guardianName,guardianEmail:ageGroup==="adult"?null:guardianEmail,termsAccepted:true,privacyAccepted:true,termsVersion:"2026-09-11",consentAcceptedAt:now};
     return Response.json({ok:true,profile},{status:201,headers:{"Set-Cookie":sessionCookie(session.token,session.maxAge),"Cache-Control":"no-store"}});
   }catch{return Response.json({error:"email_or_username_unavailable"},{status:409})}
 }

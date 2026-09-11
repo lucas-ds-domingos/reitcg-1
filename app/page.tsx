@@ -96,10 +96,17 @@ export default function Home(){
       const data=(await r.json()) as ProfileResponse;
       if(!data.profile) return null;
       setProfile(data.profile);
+      sessionStorage.removeItem("reicard-profile-cache");
       const collection=await fetch("/api/collection").then(async x=>x.ok?(await x.json()) as CollectionResponse:null);
       const items=collection?.items ?? [];
       if(items.length)setQuantities(prev=>{const next={...prev};for(const item of items)next[item.cardId]=item.quantity;localStorage.setItem("reicard-quantities",JSON.stringify(next));return next});
-    }).catch(error=>{console.error("Erro ao carregar perfil:", error)}).finally(()=>setAuthChecked(true));
+    }).catch(error=>{
+      console.error("Erro ao carregar perfil:", error);
+      const cached=sessionStorage.getItem("reicard-profile-cache");
+      if(cached){
+        try{setProfile(JSON.parse(cached))}catch{}
+      }
+    }).finally(()=>setAuthChecked(true));
     Promise.all([
       fetch("https://api.frankfurter.dev/v2/rate/USD/BRL?providers=BCB").then(async r=>(await r.json()) as RateResponse).then(d=>Number(d.rate)||0),
       fetch("https://api.frankfurter.dev/v2/rate/EUR/BRL?providers=BCB").then(async r=>(await r.json()) as RateResponse).then(d=>Number(d.rate)||0),
