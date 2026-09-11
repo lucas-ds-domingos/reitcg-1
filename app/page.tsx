@@ -95,6 +95,7 @@ export default function Home(){
       if(!r.ok) return null;
       const data=(await r.json()) as ProfileResponse;
       if(!data.profile) return null;
+      console.log("[AUTH] Profile fetched:",data.profile);
       setProfile(data.profile);
       sessionStorage.removeItem("reicard-profile-cache");
       const collection=await fetch("/api/collection",{credentials:"include"}).then(async x=>x.ok?(await x.json()) as CollectionResponse:null);
