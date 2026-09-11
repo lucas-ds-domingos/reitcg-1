@@ -5,7 +5,9 @@ export const dynamic="force-dynamic";
 export async function GET(){
   const ctx=await apiContext();
   if(!ctx) return json({error:"login_required"},401);
-  const profile=await ctx.db.prepare("SELECT id,username,display_name AS displayName,email,age_group AS ageGroup,guardian_consent AS guardianConsent,guardian_name AS guardianName,guardian_email AS guardianEmail,terms_accepted AS termsAccepted,privacy_accepted AS privacyAccepted,terms_version AS termsVersion,consent_accepted_at AS consentAcceptedAt FROM profiles WHERE id=?").bind(ctx.user.userId).first();
+  // PostgreSQL converts aliases without quotes to lowercase. Keep the camelCase
+  // names used by the client so fields such as displayName and ageGroup arrive intact.
+  const profile=await ctx.db.prepare('SELECT id,username,display_name AS "displayName",email,age_group AS "ageGroup",guardian_consent AS "guardianConsent",guardian_name AS "guardianName",guardian_email AS "guardianEmail",terms_accepted AS "termsAccepted",privacy_accepted AS "privacyAccepted",terms_version AS "termsVersion",consent_accepted_at AS "consentAcceptedAt" FROM profiles WHERE id=?').bind(ctx.user.userId).first();
   if(!profile) return json({error:"profile_not_found"},404);
   console.log("[PROFILE GET]",ctx.user.userId,"profile:",profile);
   return json({profile});

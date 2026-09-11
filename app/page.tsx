@@ -92,26 +92,9 @@ export default function Home(){
         try{const cached=JSON.parse(localStorage.getItem("reicard-catalog-sets-v9")||"[]") as CardSet[];if(cached.length)setSets(cached)}catch{}
       });
     fetch("/api/profile",{credentials:"include"}).then(async r=>{
-      if(!r.ok) {
-        console.log("[AUTH] Profile fetch failed:",r.status);
-        return null;
-      }
+      if(!r.ok)return null;
       const data=(await r.json()) as ProfileResponse;
-      if(!data.profile) {
-        console.log("[AUTH] No profile in response");
-        return null;
-      }
-      
-      // Validate and fix ageGroup
-      const ag=data.profile.ageGroup;
-      console.log("[AUTH] Profile fetched - ageGroup:",ag,"valid?",["child","teen","adult"].includes(ag as string));
-      
-      if(!ag||!["child","teen","adult"].includes(ag as string)){
-        console.warn("[AUTH] Invalid/missing ageGroup, fixing...");
-        // Force it to be a valid value
-        data.profile.ageGroup="adult" as AgeGroup;
-      }
-      
+      if(!data.profile)return null;
       setProfile(data.profile);
       sessionStorage.removeItem("reicard-profile-cache");
       const collection=await fetch("/api/collection",{credentials:"include"}).then(async x=>x.ok?(await x.json()) as CollectionResponse:null);
