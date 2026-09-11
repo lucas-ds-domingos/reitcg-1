@@ -13,9 +13,22 @@ export async function POST(request:Request){
   const ageGroup=body?.ageGroup||"";
   const guardianName=(body?.guardianName||"").trim().slice(0,80);
   const guardianEmail=(body?.guardianEmail||"").trim().toLowerCase().slice(0,160);
-  if(!/^\S+@\S+\.\S+$/.test(email)||!validPassword(password)||displayName.length<2||username.length<3||!(["child","teen","adult"].includes(ageGroup)))return Response.json({error:"invalid_registration"},{status:400});
+  
+  // Validate all required fields
+  if(!email||!/^\S+@\S+\.\S+$/.test(email))return Response.json({error:"invalid_email"},{status:400});
+  if(!password||!validPassword(password))return Response.json({error:"invalid_password"},{status:400});
+  if(displayName.length<2)return Response.json({error:"invalid_display_name"},{status:400});
+  if(username.length<3)return Response.json({error:"invalid_username"},{status:400});
+  if(!["child","teen","adult"].includes(ageGroup))return Response.json({error:"invalid_age_group"},{status:400});
   if(body?.termsAccepted!==true||body.privacyAccepted!==true)return Response.json({error:"legal_acceptance_required"},{status:400});
-  if(ageGroup!=="adult"&&(body.guardianConsent!==true||guardianName.length<3||!/^\S+@\S+\.\S+$/.test(guardianEmail)))return Response.json({error:"guardian_required"},{status:400});
+  
+  // Validate guardian data for minors
+  if(ageGroup!=="adult"){
+    if(body.guardianConsent!==true)return Response.json({error:"guardian_consent_required"},{status:400});
+    if(guardianName.length<3)return Response.json({error:"invalid_guardian_name"},{status:400});
+    if(!guardianEmail||!/^\S+@\S+\.\S+$/.test(guardianEmail))return Response.json({error:"invalid_guardian_email"},{status:400});
+  }
+  
   const sql=getSql(),id=crypto.randomUUID(),now=new Date().toISOString(),passwordHash=await hashPassword(password);
   try{
     await sql.transaction([

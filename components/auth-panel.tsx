@@ -30,7 +30,17 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
   async function submit(){
     setLoading(true);
     setError("");
-    const body=mode==="login"?{email,password}:{email,password,displayName,username,ageGroup,guardianName,guardianEmail,guardianConsent,termsAccepted,privacyAccepted};
+    let body:any;
+    if(mode==="login"){
+      body={email,password};
+    }else{
+      body={email,password,displayName,username,ageGroup,termsAccepted,privacyAccepted};
+      if(minor){
+        body.guardianName=guardianName;
+        body.guardianEmail=guardianEmail;
+        body.guardianConsent=guardianConsent;
+      }
+    }
     try{
       const response=await fetch(`/api/auth/${mode==="login"?"login":"register"}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const data=await response.json() as {error?:string;profile?:unknown};
@@ -46,7 +56,21 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
       window.location.href="/";
     }catch(reason){
       const code=reason instanceof Error?reason.message:"";
-      setError(code==="invalid_credentials"?"E-mail ou senha incorretos.":code==="email_or_username_unavailable"?"Este e-mail ou apelido já está cadastrado.":code==="guardian_required"?"Preencha a autorização do responsável.":"Confira os dados informados e tente novamente.");
+      const errorMessages:Record<string,string>={
+        "invalid_credentials":"E-mail ou senha incorretos.",
+        "email_or_username_unavailable":"Este e-mail ou apelido já está cadastrado.",
+        "guardian_required":"Preencha a autorização do responsável.",
+        "guardian_consent_required":"Você precisa confirmar a autorização do responsável.",
+        "invalid_guardian_name":"Nome do responsável deve ter no mínimo 3 caracteres.",
+        "invalid_guardian_email":"E-mail do responsável inválido.",
+        "invalid_email":"E-mail inválido.",
+        "invalid_password":"Senha deve ter no mínimo 8 caracteres.",
+        "invalid_display_name":"Nome deve ter no mínimo 2 caracteres.",
+        "invalid_username":"Apelido deve ter no mínimo 3 caracteres (apenas letras, números e _).",
+        "invalid_age_group":"Escolha uma faixa etária válida.",
+        "invalid_registration":"Confira se preencheu todos os campos corretamente."
+      };
+      setError(errorMessages[code]||"Confira os dados informados e tente novamente.");
     }finally{setLoading(false)}
   }
   
@@ -106,7 +130,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
                     onChange={event=>setDisplayName(event.target.value)} 
                     autoComplete="name"
                     placeholder="Seu nome"
-                    className="h-12 text-base border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    className="h-12 text-base text-slate-900 bg-white border-2 border-slate-300 placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
                   />
                 </div>
                 
@@ -118,7 +142,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
                     value={username} 
                     onChange={event=>setUsername(event.target.value.replace(/[^a-zA-Z0-9_]/g,""))} 
                     placeholder="ex.: fabiocards"
-                    className="h-12 text-base border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    className="h-12 text-base text-slate-900 bg-white border-2 border-slate-300 placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
                   />
                 </div>
               </>
@@ -137,7 +161,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
                   onChange={event=>setEmail(event.target.value)} 
                   autoComplete="email"
                   placeholder="seu@email.com"
-                  className="h-12 pl-12 text-base border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  className="h-12 pl-12 text-base text-slate-900 bg-white border-2 border-slate-300 placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
                 />
               </div>
             </div>
@@ -155,7 +179,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
                   onChange={event=>setPassword(event.target.value)} 
                   autoComplete={mode==="login"?"current-password":"new-password"}
                   placeholder={mode==="login"?"Sua senha":"Mínimo 8 caracteres"}
-                  className="h-12 pl-12 text-base border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  className="h-12 pl-12 text-base text-slate-900 bg-white border-2 border-slate-300 placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
                 />
               </div>
             </div>
@@ -167,7 +191,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
                   Faixa etária
                 </label>
                 <Select value={ageGroup} onValueChange={setAgeGroup}>
-                  <SelectTrigger className="h-12 text-base border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
+                  <SelectTrigger className="h-12 text-base text-slate-900 bg-white border-2 border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-300">
                     <SelectValue placeholder="Escolha uma opção"/>
                   </SelectTrigger>
                   <SelectContent>
@@ -192,7 +216,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
                     value={guardianName} 
                     onChange={event=>setGuardianName(event.target.value)}
                     placeholder="Nome completo"
-                    className="h-12 text-base border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 bg-white"
+                    className="h-12 text-base text-slate-900 bg-white border-2 border-slate-300 placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
                   />
                 </div>
                 
@@ -205,7 +229,7 @@ export function AuthPanel({onBack}:{onBack:()=>void}){
                     value={guardianEmail} 
                     onChange={event=>setGuardianEmail(event.target.value)}
                     placeholder="email@example.com"
-                    className="h-12 text-base border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 bg-white"
+                    className="h-12 text-base text-slate-900 bg-white border-2 border-slate-300 placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-300"
                   />
                 </div>
                 
