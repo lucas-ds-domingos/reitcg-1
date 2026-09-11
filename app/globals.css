@@ -1,0 +1,194 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.brand-shell{background:radial-gradient(circle at 8% 0%,#22d3ee24 0,transparent 30rem),radial-gradient(circle at 100% 18%,#ec1d781c 0,transparent 32rem),linear-gradient(180deg,#f7f8ff 0%,#eef5ff 46%,#faf7ff 100%)}.brand-header{border-image:linear-gradient(90deg,#18c8ff,#7147ff,#ec1d78) 1;box-shadow:0 8px 28px #162a5810}.brand-kicker{background:linear-gradient(90deg,#087ed4,#6236ed,#ec1d78);-webkit-background-clip:text;background-clip:text;color:transparent}.brand-button,.brand-avatar,.brand-panel{background:linear-gradient(135deg,#071a3d 5%,#184fae 55%,#6d28d9 78%,#ec1d78)}.brand-button{box-shadow:0 8px 22px #4f46e533}.brand-panel{box-shadow:0 16px 34px #27358433}.dashboard-intro{position:relative;display:flex;align-items:center;justify-content:space-between;gap:28px;overflow:hidden;border-radius:26px;padding:28px;background:radial-gradient(circle at 85% 15%,#18c8ff55 0,transparent 30%),radial-gradient(circle at 15% 115%,#ec1d7855 0,transparent 38%),linear-gradient(125deg,#051631,#123c8d 58%,#6424bc);box-shadow:0 22px 50px #1e3a6d30}.dashboard-intro:after{content:"";position:absolute;right:-45px;bottom:-105px;width:230px;height:230px;border:34px solid #ffffff12;border-radius:50%}.intro-stats{position:relative;z-index:1;display:flex;flex:none;gap:8px}.intro-stats span{display:grid;min-width:82px;place-items:center;border:1px solid #ffffff24;border-radius:17px;background:#ffffff12;padding:13px 12px;color:#fff;backdrop-filter:blur(8px)}.intro-stats strong{font-size:25px;line-height:1}.intro-stats small{margin-top:5px;font-size:11px;color:#dbeafe}.album-toolbar{border:1px solid #c4b5fd88;background:linear-gradient(110deg,#e8faffcc,#eee8ffcc 55%,#ffe7f3cc);box-shadow:0 12px 30px #4f46e514}.price-link{border:1px solid #c4b5fd;background:linear-gradient(135deg,#eefcff,#f4efff);color:#4c1d95}.price-link:hover{border-color:#7c3aed;background:linear-gradient(135deg,#dcf8ff,#ede9fe)}.card-tile{border:1px solid #dbe2f0;box-shadow:0 8px 20px #1e3a5f12;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}.card-tile:hover{transform:translateY(-4px);border-color:#8b5cf6;box-shadow:0 18px 36px #4338ca25}.card-tile.is-owned{border-color:#22d3ee;box-shadow:0 0 0 2px #22d3ee24,0 12px 28px #0891b226}.owned-badge{background:linear-gradient(135deg,#0891b2,#4f46e5,#c026d3)}.nav{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;color:#64748b;font-size:14px;font-weight:700}.nav svg{width:18px}.nav.active{background:linear-gradient(90deg,#e5f8ff,#eee9ff);color:#071a3d;box-shadow:0 1px 3px #0f172a14}.stat{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:18px;box-shadow:0 1px 2px #0f172a0a}.stat span{display:block;font-size:13px;color:#64748b;font-weight:600}.stat strong{display:block;font-size:30px;line-height:1.2;margin-top:5px}.stat small{color:#64748b}.collection-feature{position:relative;overflow:hidden;border-radius:24px;background:radial-gradient(circle at 84% 10%,#18c8ff55 0,transparent 34%),radial-gradient(circle at 18% 100%,#ec1d7844 0,transparent 38%),linear-gradient(135deg,#06132f,#102c68 58%,#4c1d95);box-shadow:0 20px 50px #14265633;transition:transform .2s ease,box-shadow .2s ease}.collection-feature:hover{transform:translateY(-3px);box-shadow:0 24px 58px #4f46e545}.collection-feature:focus-visible{outline:3px solid #18c8ff;outline-offset:3px}.collection-feature:after{content:"";position:absolute;width:260px;height:260px;border-radius:50%;right:-80px;bottom:-160px;border:36px solid #ffffff0d}.pokemon-cards{display:flex;align-items:center;justify-content:flex-end;width:190px;height:135px}.pokemon-cards img{width:78px;margin-left:-42px;border-radius:7px;box-shadow:0 10px 25px #0008}.pokemon-cards img:first-child{margin-left:0}.future-card{border:1px solid #ddd6fe;background:linear-gradient(135deg,#ffffffdd,#f5f3ffdd);box-shadow:0 9px 24px #4f46e512}.future-card:hover{border-color:#a78bfa}@media(max-width:720px){.dashboard-intro{align-items:flex-start;flex-direction:column;padding:23px}.intro-stats{width:100%}.intro-stats span{min-width:0;flex:1}}@media(max-width:540px){.pokemon-cards{position:absolute;right:-12px;top:4px;width:155px;opacity:.72}.pokemon-cards img{width:65px;margin-left:-38px}.collection-feature:after{display:none}}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.legal-copy { @apply space-y-3 text-sm leading-relaxed text-slate-600; }
+.legal-copy h3 { @apply pt-2 font-black text-slate-800; }
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #123a86;
+  --primary-foreground: #fafafa;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #171717;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --accent: #f5f5f5;
+  --accent-foreground: #171717;
+  --destructive: #e7000b;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #7047eb;
+  --chart-1: #f54900;
+  --chart-2: #009689;
+  --chart-3: #104e64;
+  --chart-4: #ffb900;
+  --chart-5: #fe9a00;
+  --radius: 0.625rem;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #171717;
+  --sidebar-primary: #123a86;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: #f5f5f5;
+  --sidebar-accent-foreground: #171717;
+  --sidebar-border: #e5e5e5;
+  --sidebar-ring: #a1a1a1;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --card: #171717;
+    --card-foreground: #ededed;
+    --popover: #171717;
+    --popover-foreground: #ededed;
+    --primary: #ededed;
+    --primary-foreground: #171717;
+    --secondary: #262626;
+    --secondary-foreground: #ededed;
+    --muted: #262626;
+    --muted-foreground: #a1a1a1;
+    --accent: #262626;
+    --accent-foreground: #ededed;
+    --destructive: #ff6467;
+    --border: #ffffff1a;
+    --input: #ffffff26;
+    --ring: #737373;
+    --chart-1: #8e51ff;
+    --chart-2: #00bc7d;
+    --chart-3: #fe9a00;
+    --chart-4: #ad46ff;
+    --chart-5: #ff2056;
+    --sidebar: #171717;
+    --sidebar-foreground: #ededed;
+    --sidebar-primary: #8e51ff;
+    --sidebar-primary-foreground: #ededed;
+    --sidebar-accent: #262626;
+    --sidebar-accent-foreground: #ededed;
+    --sidebar-border: #ffffff1a;
+    --sidebar-ring: #737373;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.social-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid #d8ddf0;
+  border-radius: 16px;
+  background: #fff;
+  padding: 15px;
+  text-align: left;
+  box-shadow: 0 9px 24px #1e3a5f12;
+  transition: 0.2s;
+}
+
+.social-shortcut:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 30px #4338ca1d;
+}
+
+.social-shortcut span:last-child {
+  min-width: 0;
+}
+
+.social-shortcut b,
+.social-shortcut small {
+  display: block;
+}
+
+.social-shortcut small {
+  margin-top: 2px;
+  color: #64748b;
+}
+
+.social-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  place-items: center;
+  border-radius: 14px;
+  color: white;
+}
+
+.social-icon svg {
+  width: 22px;
+}
+
+.friends-shortcut .social-icon{background:linear-gradient(135deg,#0891b2,#2563eb)}
+.trades-shortcut .social-icon{background:linear-gradient(135deg,#7c3aed,#db2777)}
+.friends-shortcut:hover{border-color:#38bdf8}
+.trades-shortcut:hover{border-color:#c084fc}
+.shortcut-arrow{margin-left:auto;font-size:22px;font-weight:900;color:#8b5cf6}
