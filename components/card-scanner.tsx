@@ -12,10 +12,10 @@ type ScanResult={set:ScannerSet;card:ScannerCard;score:number};
 type Rates={USD:number;EUR:number};
 type PricingResponse={pricing?:{tcgplayer?:Record<string,{marketPrice?:number;midPrice?:number}|null|undefined>;cardmarket?:{avg7?:number;avg?:number;trend?:number}}};
 type PriceInfo={value:number|null;source:string;currency?:"BRL"|"USD"|"EUR";loading?:boolean};
-type OwnedCard={cardId:string;setId:string;setName:string;name:string;localId:string;number:string;image?:string;quantity:number;updatedAt:string};
+type OwnedCard={cardId:string;setId:string;cardName:string;cardImage?:string;quantity:number};
 type SavedInfo={quantity:number;where:"conta"|"aparelho"};
 
-const STORAGE_KEY="reicard:colecao";
+const STORAGE_KEY="reicard-quantities";
 const CATALOG_LANG="pt";
 
 function clean(value:string){
@@ -131,35 +131,30 @@ function matchesTotal(set:ScannerSet,totals:number[],tolerance:number){
   return totals.some(total=>Math.abs(set.official-total)<=tolerance||Math.abs(set.total-total)<=tolerance);
 }
 
-async function persistCard(result:ScanResult):Promise<SavedInfo>{
+async function persistCard(result:ScanResult,currentQuantity:number):Promise<SavedInfo>{
+  const quantity=currentQuantity+1;
   const entry:OwnedCard={
     cardId:result.card.id,
     setId:result.set.id,
-    setName:result.set.name,
-    name:result.card.name,
-    localId:result.card.localId,
-    number:collectorNumber(result),
-    image:result.card.image,
-    quantity:1,
-    updatedAt:new Date().toISOString(),
+    cardName:result.card.name,
+    cardImage:result.card.image,
+    quantity,
   };
   try{
-    const response=await fetch("/api/collection",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(entry)});
+    const response=await fetch("/api/collection",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(entry),credentials:"include"});
     if(response.ok){
       const data=(await response.json().catch(()=>null)) as{quantity?:number}|null;
-      return{quantity:data?.quantity??1,where:"conta"};
+      return{quantity:data?.quantity??quantity,where:"conta"};
     }
   }catch{}
   const stored=window.localStorage.getItem(STORAGE_KEY);
-  const list=stored?(JSON.parse(stored) as OwnedCard[]):[];
-  const existing=list.find(item=>item.cardId===entry.cardId);
-  if(existing){existing.quantity+=1;existing.updatedAt=entry.updatedAt}
-  else list.push(entry);
-  window.localStorage.setItem(STORAGE_KEY,JSON.stringify(list));
-  return{quantity:existing?existing.quantity:1,where:"aparelho"};
+  const quantities=stored?(JSON.parse(stored) as Record<string,number>):{};
+  quantities[entry.cardId]=quantity;
+  window.localStorage.setItem(STORAGE_KEY,JSON.stringify(quantities));
+  return{quantity,where:"aparelho"};
 }
 
-export function CardScanner({sets,currentSetId,rates,onLocated}:{sets:ScannerSet[];currentSetId:string;rates:Rates;onLocated:(result:ScanResult)=>void}){
+export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSaved}:{sets:ScannerSet[];currentSetId:string;rates:Rates;quantities:Record<string,number>;onLocated:(result:ScanResult)=>void;onSaved?:(cardId:string,quantity:number)=>void}){
   const[open,setOpen]=useState(false),[preview,setPreview]=useState(""),[status,setStatus]=useState(""),[progress,setProgress]=useState(0),[results,setResults]=useState<ScanResult[]>([]),[prices,setPrices]=useState<Record<string,PriceInfo>>({}),[saved,setSaved]=useState<Record<string,SavedInfo>>({}),[error,setError]=useState(""),[manualNumber,setManualNumber]=useState("");
   const inputRef=useRef<HTMLInputElement|null>(null);
   const capturedFileRef=useRef<File|null>(null);
@@ -279,9 +274,11 @@ export function CardScanner({sets,currentSetId,rates,onLocated}:{sets:ScannerSet
   }
 
   async function keep(result:ScanResult){
-    setSaved(previous=>({...previous,[result.card.id]:previous[result.card.id]??{quantity:0,where:"aparelho"}}));
-    const info=await persistCard(result);
+    const currentQuantity=quantities[result.card.id]??0;
+    setSaved(previous=>({...previous,[result.card.id]:previous[result.card.id]??{quantity:currentQuantity,where:"aparelho"}}));
+    const info=await persistCard(result,currentQuantity);
     setSaved(previous=>({...previous,[result.card.id]:info}));
+    onSaved?.(result.card.id,info.quantity);
   }
 
   function choose(result:ScanResult){
