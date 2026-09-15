@@ -65,32 +65,21 @@ export default function Home(){
       }
       setQuantities(local);
     }catch{}
-    fetch("/api/catalog/sets?v=9")
-      .then(async response => {
-        if (!response.ok) {
-          throw new Error("Não foi possível carregar as coleções");
-        }
-
-        return (await response.json()) as ApiSet[];
-      })
-      .then(data => {
-        const catalog=data
-            .map(set => ({
-              id: set.id,
-              name: set.name,
-              total: set.cardCount?.total ?? 0,
-              official: set.cardCount?.official ?? 0,
-              releaseDate:set.releaseDate,
-              digital:set.digital,
-            }))
-            .sort((a,b)=>(b.releaseDate||"").localeCompare(a.releaseDate||""));
-        setSets(catalog);
-        localStorage.setItem("reicard-catalog-sets-v9",JSON.stringify(catalog));
-      })
-      .catch(error => {
-        console.error("Erro ao carregar coleções:", error);
-        try{const cached=JSON.parse(localStorage.getItem("reicard-catalog-sets-v9")||"[]") as CardSet[];if(cached.length)setSets(cached)}catch{}
-      });
+    void (async()=>{
+      for(let attempt=0;attempt<3;attempt++){
+        try{
+          const response=await fetch("/api/catalog/sets?v=9");
+          if(!response.ok)throw new Error("catalog_error");
+          const data=(await response.json()) as ApiSet[];
+          const catalog=data.map(set=>({id:set.id,name:set.name,total:set.cardCount?.total??0,official:set.cardCount?.official??0,releaseDate:set.releaseDate,digital:set.digital})).filter(set=>set.id&&set.name).sort((a,b)=>(b.releaseDate||"").localeCompare(a.releaseDate||""));
+          if(!catalog.length)throw new Error("empty_catalog");
+          setSets(catalog);
+          localStorage.setItem("reicard-catalog-sets-v9",JSON.stringify(catalog));
+          return;
+        }catch(error){if(attempt===2)console.error("Erro ao carregar coleções:",error)}
+      }
+      try{const cached=JSON.parse(localStorage.getItem("reicard-catalog-sets-v9")||"[]") as CardSet[];if(cached.length)setSets(cached)}catch{}
+    })();
     fetch("/api/profile",{credentials:"include"}).then(async r=>{
       if(!r.ok)return null;
       const data=(await r.json()) as ProfileResponse;
@@ -112,34 +101,46 @@ export default function Home(){
       fetch("https://api.frankfurter.dev/v2/rate/EUR/BRL?providers=BCB").then(async r=>(await r.json()) as RateResponse).then(d=>Number(d.rate)||0),
     ]).then(([USD,EUR])=>setRates({USD,EUR})).catch(()=>{});
   },[]);
-  useEffect(()=>{const scanned=pendingScan?.setId===setId?pendingScan:null;setQuery(scanned?.cardName??"");setLoading(true);fetch(`/api/catalog/set?id=${encodeURIComponent(setId)}&v=9`)
-  .then(async response => {
-    if (!response.ok) {
-      throw new Error("Não foi possível carregar as cartas");
+  useEffect(()=>{
+    const controller=new AbortController();
+    let active=true;
+    const timeoutId=window.setTimeout(()=>controller.abort(),20_000);
+    const scanned=pendingScan?.setId===setId?pendingScan:null;
+    const cacheKey=`reicard-catalog-set-${setId}-v9`;
+    setQuery(scanned?.cardName??"");
+    setCards([]);
+    setLoading(true);
+
+    async function loadSet(){
+      for(let attempt=0;attempt<3;attempt++){
+        try{
+          const response=await fetch(`/api/catalog/set?id=${encodeURIComponent(setId)}&v=9`,{signal:controller.signal});
+          if(!response.ok)throw new Error("catalog_error");
+          const data=(await response.json()) as ApiSetDetails;
+          const normalized=(data.cards??[]).map(card=>({...card,image:card.image?/\.(webp|png|jpe?g)$/i.test(card.image)?card.image:`${card.image}/low.webp`:undefined})).sort((a,b)=>a.localId.localeCompare(b.localId,undefined,{numeric:true,sensitivity:"base"}));
+          if(!normalized.length)throw new Error("empty_catalog");
+          if(controller.signal.aborted)return;
+          const metadata:CardSet={id:setId,name:data.name??setId,total:data.cardCount?.total??normalized.length,official:data.cardCount?.official??0,tcgOnline:data.tcgOnline,releaseDate:data.releaseDate,digital:data.digital};
+          setCards(normalized);
+          setSets(previous=>previous.map(item=>item.id===setId?{...item,...metadata}:item));
+          if(scanned){setQuery(scanned.cardName);setFilter("all");setPendingScan(null)}
+          localStorage.setItem(cacheKey,JSON.stringify({metadata,cards:normalized}));
+          return;
+        }catch(error){
+          if(controller.signal.aborted)return;
+          if(attempt===2)console.error(`Erro ao carregar o álbum ${setId}:`,error);
+        }
+      }
+      try{
+        const cached=JSON.parse(localStorage.getItem(cacheKey)||"null") as {metadata:CardSet;cards:Card[]}|null;
+        if(cached?.cards.length&&!controller.signal.aborted){setCards(cached.cards);setSets(previous=>previous.map(item=>item.id===setId?{...item,...cached.metadata}:item));return}
+      }catch{}
+      if(!controller.signal.aborted)setCards(setId==="sv03.5"?FALLBACK.map(card=>({...card,image:card.image?.replace("high.webp","low.webp")})):[]);
     }
 
-    return (await response.json()) as ApiSetDetails;
-  })
-  .then(data => {
-    const normalized=(data.cards ?? [])
-        .map(card => ({
-          ...card,
-          image: card.image
-            ? /\.(webp|png|jpe?g)$/i.test(card.image)?card.image:`${card.image}/low.webp`
-            : undefined,
-        }))
-        .sort((a, b) =>
-          a.localId.localeCompare(b.localId, undefined, {
-            numeric: true,
-            sensitivity: "base",
-          })
-        );
-    const metadata:CardSet={id:setId,name:data.name??setId,total:data.cardCount?.total??normalized.length,official:data.cardCount?.official??0,tcgOnline:data.tcgOnline,releaseDate:data.releaseDate,digital:data.digital};
-    setCards(normalized);
-    setSets(previous=>previous.map(item=>item.id===setId?{...item,...metadata}:item));
-    if(scanned){setQuery(scanned.cardName);setFilter("all");setPendingScan(null)}
-    localStorage.setItem(`reicard-catalog-set-${setId}-v9`,JSON.stringify({metadata,cards:normalized}));
-  }).catch(()=>{try{const cached=JSON.parse(localStorage.getItem(`reicard-catalog-set-${setId}-v9`)||"null") as {metadata:CardSet;cards:Card[]}|null;if(cached?.cards.length){setCards(cached.cards);setSets(previous=>previous.map(item=>item.id===setId?{...item,...cached.metadata}:item));return}}catch{}setCards(setId==="sv03.5"?FALLBACK.map(c=>({...c,image:c.image?.replace("high.webp","low.webp")})):[])}).finally(()=>setLoading(false))},[setId]);
+    void loadSet().finally(()=>{if(active)setLoading(false)});
+    return()=>{active=false;window.clearTimeout(timeoutId);controller.abort()};
+  },[setId]);
 
   function changeQuantity(card:Card,quantity:number){
     const qty=Math.max(0,Math.min(99,quantity));
