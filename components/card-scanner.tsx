@@ -16,18 +16,11 @@ type OwnedCard={cardId:string;setId:string;setName:string;name:string;localId:st
 type SavedInfo={quantity:number;where:"conta"|"aparelho"};
 
 const STORAGE_KEY="reicard:colecao";
-
-// O catálogo em português faz o nome impresso na carta ("Vulpix de Alola")
-// bater com o nome do catálogo. Em inglês o mesmo card se chama
-// "Alolan Vulpix" e a pontuação por nome fica quase zerada.
 const CATALOG_LANG="pt";
 
 function clean(value:string){
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 }
-
-// Pontes entre a grafia impressa em português e a grafia do catálogo em inglês,
-// caso a API ainda não tenha o set traduzido.
 const REGIONAL:Array<[RegExp,string]>=[
   [/\bde alola\b/g,"de alola alolan alola"],
   [/\bde galar\b/g,"de galar galarian galar"],
@@ -42,8 +35,6 @@ function haystackFor(text:string){
 }
 
 function cardNumber(value:string){
-  // Só considera numeração puramente numérica. "TG12"/"SV05" viravam 12 e 5 e
-  // geravam falsos positivos em subsets.
   return /^\d+$/.test(value)?Number(value):NaN;
 }
 
@@ -64,14 +55,10 @@ function matchScore(text:string,set:ScannerSet,card:ScannerCard,exactTotal:boole
   if(name&&haystack.includes(` ${name} `))score+=100;
   score+=tokens.filter(token=>haystack.includes(` ${token} `)).length*12;
   score+=clean(set.name).split(" ").filter(token=>token.length>3&&haystack.includes(` ${token} `)).length*3;
-  // O PS impresso separa cards de número igual em edições diferentes.
   if(card.hp&&new RegExp(`\\b(ps|hp)\\s*${card.hp}\\b`).test(haystack))score+=18;
   if(exactTotal)score+=30;
   return score;
 }
-
-// Binariza a região: o texto miúdo da base da carta sai muito melhor no
-// Tesseract em preto e branco puro do que em cinza com contraste.
 function binarize(canvas:HTMLCanvasElement){
   const context=canvas.getContext("2d",{willReadFrequently:true});
   if(!context)return;
@@ -116,10 +103,7 @@ async function prepareRegions(file:File){
     });
     return{
       full:region(image,{x:0,y:0,w:1,h:1},1600,1.15,false),
-      // Faixa inferior inteira: pega a numeração mesmo com a carta torta.
       wide:region(image,{x:0,y:.60,w:1,h:.40},2200,1.5,true),
-      // A numeração fica na base à esquerda; recortar só esse lado deixa os
-      // dígitos muito maiores no canvas enviado ao OCR.
       left:region(image,{x:0,y:.70,w:.6,h:.28},2200,1.7,true),
       tight:region(image,{x:.02,y:.74,w:.42,h:.20},2000,1.9,true),
     };
@@ -207,8 +191,6 @@ export function CardScanner({sets,currentSetId,rates,onLocated}:{sets:ScannerSet
       const fullText=(await worker.recognize(regions.full)).data.text;
 
       setStatus("Lendo a numeração inferior...");
-      // Passadas só de numeração: limitar o alfabeto a dígitos e barra evita
-      // que "27/147" vire "2?/1A7".
       await worker.setParameters({tessedit_pageseg_mode:tesseract.PSM.SPARSE_TEXT,tessedit_char_whitelist:"0123456789/"});
       phase=1;const wideText=(await worker.recognize(regions.wide)).data.text;
       phase=2;const leftText=(await worker.recognize(regions.left)).data.text;
@@ -221,9 +203,6 @@ export function CardScanner({sets,currentSetId,rates,onLocated}:{sets:ScannerSet
       setStatus("Procurando nos álbuns físicos...");
 
       const totals=printed.map(item=>item.total);
-      // Primeiro tenta o total exato. A tolerância de ±5 só entra se nada
-      // bater: com 147, ela também puxava sets de 145 e 150 e o ranking podia
-      // devolver a edição errada.
       let exactTotal=true;
       let candidateSets=sets.filter(set=>matchesTotal(set,totals,0));
       if(!candidateSets.length){exactTotal=false;candidateSets=sets.filter(set=>matchesTotal(set,totals,5))}
