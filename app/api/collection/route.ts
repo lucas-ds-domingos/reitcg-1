@@ -5,7 +5,7 @@ export const dynamic="force-dynamic";
 export async function GET(){
   const ctx=await apiContext();
   if(!ctx) return json({error:"login_required"},401);
-  const result=await ctx.db.prepare("SELECT card_id AS cardId,set_id AS setId,card_name AS cardName,card_image AS cardImage,quantity FROM collection_items WHERE user_id=? AND quantity>0").bind(ctx.user.userId).all();
+  const result=await ctx.db.prepare(`SELECT card_id AS "cardId",set_id AS "setId",card_name AS "cardName",card_image AS "cardImage",quantity FROM collection_items WHERE user_id=? AND quantity>0`).bind(ctx.user.userId).all();
   return json({items:result.results});
 }
 

@@ -7,10 +7,10 @@ export async function GET(request:Request){
   if(!ctx) return json({error:"login_required"},401);
   const url=new URL(request.url);
   const q=(url.searchParams.get("q")||"").trim().slice(0,30);
-  const relations=await ctx.db.prepare("SELECT f.user_a AS userA,f.user_b AS userB,f.requester_id AS requesterId,f.status,p.id,p.username,p.display_name AS displayName FROM friendships f JOIN profiles p ON p.id=CASE WHEN f.user_a=? THEN f.user_b ELSE f.user_a END WHERE f.user_a=? OR f.user_b=? ORDER BY f.updated_at DESC").bind(ctx.user.userId,ctx.user.userId,ctx.user.userId).all();
+  const relations=await ctx.db.prepare(`SELECT f.user_a AS "userA",f.user_b AS "userB",f.requester_id AS "requesterId",f.status,p.id,p.username,p.display_name AS "displayName" FROM friendships f JOIN profiles p ON p.id=CASE WHEN f.user_a=? THEN f.user_b ELSE f.user_a END WHERE f.user_a=? OR f.user_b=? ORDER BY f.updated_at DESC`).bind(ctx.user.userId,ctx.user.userId,ctx.user.userId).all();
   let people:unknown[]=[];
   if(q.length>=2){
-    const found=await ctx.db.prepare("SELECT id,username,display_name AS displayName FROM profiles WHERE id<>? AND (username LIKE ? OR display_name LIKE ?) ORDER BY username LIMIT 20").bind(ctx.user.userId,`%${q}%`,`%${q}%`).all();
+    const found=await ctx.db.prepare(`SELECT id,username,display_name AS "displayName" FROM profiles WHERE id<>? AND (username LIKE ? OR display_name LIKE ?) ORDER BY username LIMIT 20`).bind(ctx.user.userId,`%${q}%`,`%${q}%`).all();
     people=found.results;
   }
   return json({me:ctx.user.userId,relations:relations.results,people});

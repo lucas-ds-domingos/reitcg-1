@@ -22,6 +22,13 @@
       "when": 1789131025902,
       "tag": "0002_futuristic_azazel",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789736227225,
+      "tag": "0003_add_share_status",
+      "breakpoints": true
     }
   ]
 }

@@ -4,12 +4,15 @@ export const dynamic="force-dynamic";
 
 type SharedCard={cardId:string;name:string;number:string;image?:string;quantity:number;kind:"repeated"|"missing"};
 
-export async function GET(){
+export async function GET(request:Request){
   const ctx=await apiContext();
   if(!ctx)return json({error:"login_required"},401);
-  const friends=await ctx.db.prepare("SELECT p.id,p.username,p.display_name AS displayName FROM friendships f JOIN profiles p ON p.id=CASE WHEN f.user_a=? THEN f.user_b ELSE f.user_a END WHERE (f.user_a=? OR f.user_b=?) AND f.status='accepted' ORDER BY p.display_name").bind(ctx.user.userId,ctx.user.userId,ctx.user.userId).all();
-  const inbox=await ctx.db.prepare("SELECT s.id,s.set_id AS setId,s.set_name AS setName,s.share_type AS shareType,s.payload,s.created_at AS createdAt,p.id AS senderId,p.username,p.display_name AS displayName FROM collection_shares s JOIN profiles p ON p.id=s.sender_id WHERE s.recipient_id=? ORDER BY s.created_at DESC LIMIT 50").bind(ctx.user.userId).all();
-  const shares=inbox.results.map(row=>{
+  const scope=new URL(request.url).searchParams.get("scope")==="sent"?"sent":"inbox";
+  const friends=await ctx.db.prepare(`SELECT p.id,p.username,p.display_name AS "displayName" FROM friendships f JOIN profiles p ON p.id=CASE WHEN f.user_a=? THEN f.user_b ELSE f.user_a END WHERE (f.user_a=? OR f.user_b=?) AND f.status='accepted' ORDER BY p.display_name`).bind(ctx.user.userId,ctx.user.userId,ctx.user.userId).all();
+  const list=scope==="sent"
+    ?await ctx.db.prepare(`SELECT s.id,s.set_id AS "setId",s.set_name AS "setName",s.share_type AS "shareType",s.payload,s.status,s.note,s.resolved_at AS "resolvedAt",s.created_at AS "createdAt",p.id AS "recipientId",p.username,p.display_name AS "displayName" FROM collection_shares s JOIN profiles p ON p.id=s.recipient_id WHERE s.sender_id=? ORDER BY s.created_at DESC LIMIT 50`).bind(ctx.user.userId).all()
+    :await ctx.db.prepare(`SELECT s.id,s.set_id AS "setId",s.set_name AS "setName",s.share_type AS "shareType",s.payload,s.status,s.note,s.resolved_at AS "resolvedAt",s.created_at AS "createdAt",p.id AS "senderId",p.username,p.display_name AS "displayName" FROM collection_shares s JOIN profiles p ON p.id=s.sender_id WHERE s.recipient_id=? AND s.status='pending' ORDER BY s.created_at DESC LIMIT 50`).bind(ctx.user.userId).all();
+  const shares=list.results.map(row=>{
     const item=row as Record<string,unknown>;
     let cards:SharedCard[]=[];
     try{cards=JSON.parse(String(item.payload||"[]")) as SharedCard[]}catch{}
