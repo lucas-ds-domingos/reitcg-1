@@ -26,7 +26,7 @@ export async function POST(request:Request){
   const ctx=await apiContext();
   if(!ctx)return json({error:"login_required"},401);
   const body=await request.json().catch(()=>null) as {recipientId?:string;setId?:string;setName?:string;shareType?:string;cards?:SharedCard[]}|null;
-  if(!body?.recipientId||!body.setId||!body.setName||!(["repeated","missing","both"].includes(body.shareType||""))||!Array.isArray(body.cards))return json({error:"invalid_share"},400);
+  if(!body?.recipientId||!body.setId||!body.setName||!(["repeated","missing","both","request"].includes(body.shareType||""))||!Array.isArray(body.cards))return json({error:"invalid_share"},400);
   const [userA,userB]=[ctx.user.userId,body.recipientId].sort();
   const friendship=await ctx.db.prepare("SELECT status FROM friendships WHERE user_a=? AND user_b=? AND status='accepted'").bind(userA,userB).first<{status:string}>();
   if(!friendship)return json({error:"friend_required"},403);
