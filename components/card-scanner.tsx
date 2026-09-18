@@ -1,7 +1,7 @@
 "use client";
 
 import {useEffect,useRef,useState} from "react";
-import {Camera,Check,CheckCircle2,ExternalLink,ImagePlus,Loader2,ScanLine} from "lucide-react";
+import {Camera,Check,CheckCircle2,ExternalLink,ImagePlus,Loader2,ScanLine,Search} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle,DialogTrigger} from "@/components/ui/dialog";
 
@@ -154,21 +154,24 @@ async function persistCard(result:ScanResult,currentQuantity:number):Promise<Sav
   return{quantity,where:"aparelho"};
 }
 
-export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSaved}:{sets:ScannerSet[];currentSetId:string;rates:Rates;quantities:Record<string,number>;onLocated:(result:ScanResult)=>void;onSaved?:(cardId:string,quantity:number)=>void}){
+export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSaved}:{sets:ScannerSet[];currentSetId:string;rates:Rates;quantities:Record<string,number>;onLocated:(result:ScanResult)=>void;onSaved?:(cardId:string,quantity:number,result:ScanResult)=>void}){
   const[open,setOpen]=useState(false),[preview,setPreview]=useState(""),[status,setStatus]=useState(""),[progress,setProgress]=useState(0),[results,setResults]=useState<ScanResult[]>([]),[prices,setPrices]=useState<Record<string,PriceInfo>>({}),[saved,setSaved]=useState<Record<string,SavedInfo>>({}),[error,setError]=useState(""),[manualNumber,setManualNumber]=useState("");
   const inputRef=useRef<HTMLInputElement|null>(null);
-  const capturedFileRef=useRef<File|null>(null);
 
   useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview)},[preview]);
 
+  function clearResults(){
+    setStatus("");setProgress(0);setResults([]);setPrices({});setSaved({});setError("");
+  }
+
   function reset(){
     if(preview)URL.revokeObjectURL(preview);
-    setPreview("");setStatus("");setProgress(0);setResults([]);setPrices({});setSaved({});setError("");setManualNumber("");
+    clearResults();
+    setPreview("");setManualNumber("");
     if(inputRef.current)inputRef.current.value="";
   }
 
-  async function scan(file:File,suppliedNumber=""){
-    capturedFileRef.current=file;
+  async function scan(file:File){
     reset();
     setPreview(URL.createObjectURL(file));
     setStatus("Lendo o nome e o número da carta...");
@@ -192,85 +195,95 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
       phase=3;const tightText=(await worker.recognize(regions.tight)).data.text;
 
       const numberText=`${wideText}\n${leftText}\n${tightText}`;
-      const printed=[...readPrintedNumbers(numberText),...readPrintedNumbers(suppliedNumber)]
-        .filter((item,index,list)=>list.findIndex(other=>other.number===item.number&&other.total===item.total)===index);
+      const printed=readPrintedNumbers(numberText);
       if(!printed.length)throw new Error("number_not_found");
       setStatus("Procurando nos álbuns físicos...");
-
-      const totals=printed.map(item=>item.total);
-      let exactTotal=true;
-      let candidateSets=sets.filter(set=>matchesTotal(set,totals,0));
-      if(!candidateSets.length){exactTotal=false;candidateSets=sets.filter(set=>matchesTotal(set,totals,5))}
-      if(!candidateSets.length){
-        try{
-          const request=await fetch(`/api/catalog/sets?lang=${CATALOG_LANG}&v=10`);
-          if(request.ok){
-            const catalog=(await request.json()) as Array<{id:string;name:string;cardCount?:{total?:number;official?:number}}>;
-            const mapped=catalog.map(set=>({id:set.id,name:set.name,total:set.cardCount?.total??0,official:set.cardCount?.official??0}));
-            exactTotal=true;
-            candidateSets=mapped.filter(set=>matchesTotal(set,totals,0));
-            if(!candidateSets.length){exactTotal=false;candidateSets=mapped.filter(set=>matchesTotal(set,totals,5))}
-          }
-        }catch{}
-      }
-      if(!candidateSets.length)throw new Error("set_not_found");
-
-      const responses=await Promise.allSettled(candidateSets.map(async set=>{
-        const request=await fetch(`/api/catalog/set?id=${encodeURIComponent(set.id)}&lang=${CATALOG_LANG}&v=10`);
-        if(!request.ok)throw new Error("catalog_error");
-        const data=(await request.json()) as SetResponse;
-        const exact=matchesTotal(set,totals,0);
-        return(data.cards??[]).flatMap(card=>printed.some(item=>cardNumber(card.localId)===item.number)
-          ?[{set,card,score:matchScore(fullText,set,card,exact&&exactTotal)+(set.id===currentSetId?8:0)}]
-          :[]);
-      }));
-      const matches=responses.flatMap(item=>item.status==="fulfilled"?item.value:[])
-        .sort((a,b)=>b.score-a.score)
-        .filter((item,index,list)=>list.findIndex(other=>other.card.id===item.card.id)===index)
-        .slice(0,5);
-      if(!matches.length)throw new Error("card_not_found");
-      setResults(matches);
-      setPrices(Object.fromEntries(matches.map(item=>[item.card.id,{value:null,source:"Consultando cotação...",loading:true}])));
-      void Promise.all(matches.map(async item=>{
-        try{
-          const response=await fetch(`/api/catalog/card?id=${encodeURIComponent(item.card.id)}&v=10`);
-          if(!response.ok)throw new Error("price_error");
-          const data=(await response.json()) as PricingResponse;
-          const tcg=data.pricing?.tcgplayer;
-          const usdValues=tcg?Object.values(tcg).flatMap(value=>{const price=value?.marketPrice??value?.midPrice;return typeof price==="number"&&price>0?[price]:[]}):[];
-          const usdPrice=usdValues.length?usdValues.reduce((sum,value)=>sum+value,0)/usdValues.length:undefined;
-          if(usdPrice!==undefined){
-            setPrices(previous=>({...previous,[item.card.id]:{value:usdPrice*(rates.USD||1),currency:rates.USD?"BRL":"USD",source:`TCGplayer · média de ${usdValues.length} ${usdValues.length===1?"versão":"versões"}${rates.USD?" · convertido para R$":" · em US$"}`}}));
-            return;
-          }
-          const market=data.pricing?.cardmarket;
-          const eurPrice=market?.avg7??market?.avg??market?.trend;
-          if(eurPrice!==undefined&&eurPrice>0){
-            setPrices(previous=>({...previous,[item.card.id]:{value:eurPrice*(rates.EUR||1),currency:rates.EUR?"BRL":"EUR",source:`Cardmarket · média disponível${rates.EUR?" · convertido para R$":" · em €"}`}}));
-            return;
-          }
-          setPrices(previous=>({...previous,[item.card.id]:{value:null,source:"Sem cotação nos mercados integrados"}}));
-        }catch{
-          setPrices(previous=>({...previous,[item.card.id]:{value:null,source:"Cotação temporariamente indisponível"}}));
-        }
-      }));
-      setStatus(matches.length===1?"Carta localizada!":"Confira qual destas cartas foi fotografada.");
+      await locate(printed,fullText);
     }catch(reason){
-      const code=reason instanceof Error?reason.message:"";
-      setError(code==="number_not_found"?"Não consegui ler o número. Fotografe a carta inteira, sem reflexo, deixando a numeração inferior bem visível.":code==="set_not_found"?"O número foi lido, mas não correspondeu aos álbuns físicos disponíveis.":"Não foi possível localizar a carta. Tente novamente com mais luz e a câmera paralela à carta.");
-      setStatus("");
+      fail(reason,false);
     }finally{if(worker)await worker.terminate()}
   }
 
-  function retryWithNumber(){
-    const normalized=manualNumber.trim().replace(/[Oo]/g,"0");
-    if(!/^\d{1,3}\s*[/|]\s*\d{1,3}$/.test(normalized)){
-      setError("Informe o número como 027/147 (o número impresso na parte de baixo da carta).");
+  async function locate(printed:Array<{number:number;total:number}>,fullText:string){
+    setStatus("Procurando nos álbuns físicos...");
+
+    const totals=printed.map(item=>item.total);
+    let exactTotal=true;
+    let candidateSets=sets.filter(set=>matchesTotal(set,totals,0));
+    if(!candidateSets.length){exactTotal=false;candidateSets=sets.filter(set=>matchesTotal(set,totals,5))}
+    if(!candidateSets.length){
+      try{
+        const request=await fetch(`/api/catalog/sets?lang=${CATALOG_LANG}&v=10`);
+        if(request.ok){
+          const catalog=(await request.json()) as Array<{id:string;name:string;cardCount?:{total?:number;official?:number}}>;
+          const mapped=catalog.map(set=>({id:set.id,name:set.name,total:set.cardCount?.total??0,official:set.cardCount?.official??0}));
+          exactTotal=true;
+          candidateSets=mapped.filter(set=>matchesTotal(set,totals,0));
+          if(!candidateSets.length){exactTotal=false;candidateSets=mapped.filter(set=>matchesTotal(set,totals,5))}
+        }
+      }catch{}
+    }
+    if(!candidateSets.length)throw new Error("set_not_found");
+
+    const responses=await Promise.allSettled(candidateSets.map(async set=>{
+      const request=await fetch(`/api/catalog/set?id=${encodeURIComponent(set.id)}&lang=${CATALOG_LANG}&v=10`);
+      if(!request.ok)throw new Error("catalog_error");
+      const data=(await request.json()) as SetResponse;
+      const exact=matchesTotal(set,totals,0);
+      return(data.cards??[]).flatMap(card=>printed.some(item=>cardNumber(card.localId)===item.number)
+        ?[{set,card,score:matchScore(fullText,set,card,exact&&exactTotal)+(set.id===currentSetId?8:0)}]
+        :[]);
+    }));
+    const matches=responses.flatMap(item=>item.status==="fulfilled"?item.value:[])
+      .sort((a,b)=>b.score-a.score)
+      .filter((item,index,list)=>list.findIndex(other=>other.card.id===item.card.id)===index)
+      .slice(0,5);
+    if(!matches.length)throw new Error("card_not_found");
+    setResults(matches);
+    setPrices(Object.fromEntries(matches.map(item=>[item.card.id,{value:null,source:"Consultando cotação...",loading:true}])));
+    void Promise.all(matches.map(async item=>{
+      try{
+        const response=await fetch(`/api/catalog/card?id=${encodeURIComponent(item.card.id)}&v=10`);
+        if(!response.ok)throw new Error("price_error");
+        const data=(await response.json()) as PricingResponse;
+        const tcg=data.pricing?.tcgplayer;
+        const usdValues=tcg?Object.values(tcg).flatMap(value=>{const price=value?.marketPrice??value?.midPrice;return typeof price==="number"&&price>0?[price]:[]}):[];
+        const usdPrice=usdValues.length?usdValues.reduce((sum,value)=>sum+value,0)/usdValues.length:undefined;
+        if(usdPrice!==undefined){
+          setPrices(previous=>({...previous,[item.card.id]:{value:usdPrice*(rates.USD||1),currency:rates.USD?"BRL":"USD",source:`TCGplayer · média de ${usdValues.length} ${usdValues.length===1?"versão":"versões"}${rates.USD?" · convertido para R$":" · em US$"}`}}));
+          return;
+        }
+        const market=data.pricing?.cardmarket;
+        const eurPrice=market?.avg7??market?.avg??market?.trend;
+        if(eurPrice!==undefined&&eurPrice>0){
+          setPrices(previous=>({...previous,[item.card.id]:{value:eurPrice*(rates.EUR||1),currency:rates.EUR?"BRL":"EUR",source:`Cardmarket · média disponível${rates.EUR?" · convertido para R$":" · em €"}`}}));
+          return;
+        }
+        setPrices(previous=>({...previous,[item.card.id]:{value:null,source:"Sem cotação nos mercados integrados"}}));
+      }catch{
+        setPrices(previous=>({...previous,[item.card.id]:{value:null,source:"Cotação temporariamente indisponível"}}));
+      }
+    }));
+    setStatus(matches.length===1?"Carta localizada!":"Confira qual destas cartas é a certa.");
+  }
+
+  function fail(reason:unknown,manual:boolean){
+    const code=reason instanceof Error?reason.message:"";
+    setError(manual
+      ?code==="set_not_found"?"Nenhum álbum físico tem esse total de cartas. Confira o número impresso na base da carta.":"Não encontrei uma carta com esse código. Confira o número e tente novamente."
+      :code==="number_not_found"?"Não consegui ler o número. Fotografe a carta inteira, sem reflexo, ou pesquise pelo código logo abaixo.":code==="set_not_found"?"O número foi lido, mas não correspondeu aos álbuns físicos disponíveis. Se estiver errado, pesquise pelo código logo abaixo.":"Não foi possível localizar a carta. Tente novamente com mais luz e a câmera paralela à carta, ou pesquise pelo código logo abaixo.");
+    setStatus("");
+  }
+
+  async function searchByCode(){
+    const normalized=manualNumber.trim().replace(/[Oo]/g,"0").replace(/[\\|]/g,"/");
+    const match=normalized.match(/^(\d{1,3})\s*\/\s*(\d{1,3})$/);
+    if(!match){
+      setError("Informe o código como 027/147 (o número impresso na parte de baixo da carta).");
       return;
     }
-    const file=capturedFileRef.current;
-    if(!file)return;
-    void scan(file,normalized.replace("|","/"));
+    clearResults();
+    try{await locate([{number:Number(match[1]),total:Number(match[2])}],"")}catch(reason){fail(reason,true)}
   }
 
   async function keep(result:ScanResult){
@@ -278,7 +291,7 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
     setSaved(previous=>({...previous,[result.card.id]:previous[result.card.id]??{quantity:currentQuantity,where:"aparelho"}}));
     const info=await persistCard(result,currentQuantity);
     setSaved(previous=>({...previous,[result.card.id]:info}));
-    onSaved?.(result.card.id,info.quantity);
+    onSaved?.(result.card.id,info.quantity,result);
   }
 
   function choose(result:ScanResult){
@@ -287,10 +300,16 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
     reset();
   }
 
+  const busy=Boolean(status)&&!results.length&&!error;
+  const feedback=<>{status&&<><div className="flex items-center gap-2 font-bold text-[#071a3d]">{results.length?<CheckCircle2 className="h-5 w-5 text-green-600"/>:<Loader2 className="h-5 w-5 animate-spin text-violet-600"/>}{status}</div>{!results.length&&<div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-600 transition-all" style={{width:`${Math.max(8,progress)}%`}}/></div>}</>}{error&&<p className="text-sm font-semibold leading-relaxed text-red-600">{error}</p>}</>;
+  const codeSearch=<div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-sm font-bold text-[#071a3d]">{results.length?"Não é esta carta? Pesquise pelo código":"Ou pesquise pelo código da carta"}</p><div className="mt-2 flex gap-2"><input value={manualNumber} onChange={event=>setManualNumber(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void searchByCode()}} placeholder="Ex.: 027/147" inputMode="text" aria-label="Código da carta" className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm"/><Button type="button" variant="secondary" className="shrink-0 gap-2" disabled={busy||!manualNumber.trim()} onClick={()=>void searchByCode()}><Search className="h-4 w-4"/>Pesquisar código</Button></div><p className="mt-1 text-xs text-slate-500">Use o número impresso na base da carta, no formato 027/147.</p></div>;
+
   return <Dialog open={open} onOpenChange={value=>{setOpen(value);if(!value)reset()}}><DialogTrigger asChild><Button className="brand-button h-11 gap-2 whitespace-nowrap"><ScanLine className="h-5 w-5"/>Escanear carta</Button></DialogTrigger><DialogContent className="max-h-[94vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto p-5 sm:p-7"><DialogHeader><DialogTitle className="flex items-center gap-2"><Camera className="h-5 w-5 text-violet-600"/>Localizar carta pela câmera</DialogTitle><DialogDescription>Fotografe a frente inteira da carta. O ReiCard lerá a numeração e buscará o álbum físico correto.</DialogDescription></DialogHeader>
     <div className="space-y-4">
       <input ref={inputRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={event=>{const file=event.target.files?.[0];if(file)void scan(file)}}/>
-      {!preview?<button type="button" onClick={()=>inputRef.current?.click()} className="flex min-h-52 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-300 bg-gradient-to-br from-cyan-50 to-fuchsia-50 p-6 text-center"><span className="brand-button grid h-16 w-16 place-items-center rounded-full text-white shadow-lg"><Camera className="h-8 w-8"/></span><b className="mt-4 text-lg text-[#071a3d]">Abrir câmera</b><span className="mt-1 text-sm text-slate-500">Use boa iluminação e evite reflexos no plástico</span></button>:<div className="grid gap-4 sm:grid-cols-[180px_1fr]"><img src={preview} alt="Carta fotografada" className="mx-auto max-h-64 w-full rounded-xl bg-slate-100 object-contain"/><div className="flex min-h-36 flex-col justify-center rounded-xl bg-slate-50 p-4">{status&&<><div className="flex items-center gap-2 font-bold text-[#071a3d]">{results.length?<CheckCircle2 className="h-5 w-5 text-green-600"/>:<Loader2 className="h-5 w-5 animate-spin text-violet-600"/>}{status}</div>{!results.length&&<div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-600 transition-all" style={{width:`${Math.max(8,progress)}%`}}/></div>}</>}{error&&<><p className="text-sm font-semibold leading-relaxed text-red-600">{error}</p><div className="mt-3 flex gap-2"><input value={manualNumber} onChange={event=>setManualNumber(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")retryWithNumber()}} placeholder="Ex.: 027/147" inputMode="numeric" aria-label="Número da carta" className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm"/><Button type="button" variant="secondary" className="shrink-0" onClick={retryWithNumber}>Buscar número</Button></div><p className="mt-1 text-xs text-slate-500">Se a foto não for lida, digite a numeração impressa na base da carta.</p></>}<Button variant="outline" className="mt-4 gap-2" onClick={()=>inputRef.current?.click()}><ImagePlus className="h-4 w-4"/>Fotografar novamente</Button></div></div>}
+      {!preview?<button type="button" onClick={()=>inputRef.current?.click()} className="flex min-h-52 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-300 bg-gradient-to-br from-cyan-50 to-fuchsia-50 p-6 text-center"><span className="brand-button grid h-16 w-16 place-items-center rounded-full text-white shadow-lg"><Camera className="h-8 w-8"/></span><b className="mt-4 text-lg text-[#071a3d]">Abrir câmera</b><span className="mt-1 text-sm text-slate-500">Use boa iluminação e evite reflexos no plástico</span></button>:<div className="grid gap-4 sm:grid-cols-[180px_1fr]"><img src={preview} alt="Carta fotografada" className="mx-auto max-h-64 w-full rounded-xl bg-slate-100 object-contain"/><div className="flex min-h-36 flex-col justify-center rounded-xl bg-slate-50 p-4">{feedback}<Button variant="outline" className="mt-4 gap-2" onClick={()=>inputRef.current?.click()}><ImagePlus className="h-4 w-4"/>Fotografar novamente</Button></div></div>}
+      {codeSearch}
+      {!preview&&(status||error)&&<div className="rounded-xl bg-slate-50 p-4">{feedback}</div>}
       {results.length>0&&<div className="space-y-3"><p className="text-sm font-bold text-slate-600">Confira a carta e a cotação:</p>{results.map(result=>{const price=prices[result.card.id];const links=priceLinks(result);const owned=saved[result.card.id];return <article key={`${result.set.id}-${result.card.id}`} className="rounded-xl border bg-white p-3 shadow-sm"><div className="flex items-center gap-3"><div className="h-24 w-16 shrink-0 overflow-hidden rounded bg-slate-100">{result.card.image?<img src={/\.(webp|png|jpe?g)$/i.test(result.card.image)?result.card.image:`${result.card.image}/low.webp`} alt="" className="h-full w-full object-contain"/>:<ScanLine className="m-auto mt-9 h-5 w-5 text-slate-400"/>}</div><div className="min-w-0 flex-1"><b className="block truncate text-[#071a3d]">{result.card.name}</b><span className="block truncate text-sm text-slate-500">{result.set.name}</span><span className="text-xs font-bold text-violet-600">Carta #{collectorNumber(result)}</span><div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2"><span className="block text-[10px] font-bold uppercase tracking-wide text-emerald-700">Valor médio estimado</span><b className="text-sm text-emerald-950">{price?.loading?"Consultando...":price?.value!==null&&price?.value!==undefined?new Intl.NumberFormat("pt-BR",{style:"currency",currency:price.currency??"BRL"}).format(price.value):"Sem cotação"}</b><span className="block text-[10px] text-emerald-700">{price?.source??"Consultando cotação..."}</span></div></div></div>
         <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={()=>void keep(result)} className="flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-2 py-2 text-xs font-bold text-white">{owned?.quantity?<><Check className="h-3 w-3"/>Guardada ({owned.quantity})</>:"Tenho esta carta"}</button><button type="button" onClick={()=>choose(result)} className="brand-button rounded-lg px-2 py-2 text-xs font-bold text-white">Abrir no álbum</button></div>
         <div className="mt-2 grid grid-cols-2 gap-2"><a href={links.liga} target="_blank" rel="noopener noreferrer" className="price-link flex items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-bold" aria-label={`Consultar ${links.query} na Liga Pokémon`}>Liga Pokémon<ExternalLink className="h-3 w-3"/></a><a href={links.tcgplayer} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 rounded-lg bg-slate-100 px-2 py-2 text-xs font-bold text-slate-700">TCGplayer<ExternalLink className="h-3 w-3"/></a></div>

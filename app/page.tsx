@@ -15,9 +15,11 @@ import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
 import {AlertDialog,AlertDialogAction,AlertDialogCancel,AlertDialogContent,AlertDialogDescription,AlertDialogFooter,AlertDialogHeader,AlertDialogTitle,AlertDialogTrigger} from "@/components/ui/alert-dialog";
 import {CardScanner} from "@/components/card-scanner";
 import {ShareCollection} from "@/components/share-collection";
+import {hasSearch,matchesSearch,parseSearch,setHasTotal} from "@/lib/card-search";
 
 type ApiCard={id:string;localId:string;name:string;image?:string};
-type Card=ApiCard;
+type Card=ApiCard&{setId?:string};
+type OwnedMeta={setId:string;name:string;localId:string;image?:string};
 type CardSet={id:string;name:string;total:number;official:number;tcgOnline?:string;releaseDate?:string;digital?:boolean};
 type ApiSet={id:string;name:string;cardCount?:{total?:number;official?:number};releaseDate?:string;digital?:boolean};
 type ApiSetDetails={id?:string;name?:string;cardCount?:{total?:number;official?:number};tcgOnline?:string;releaseDate?:string;digital?:boolean;cards?:ApiCard[]};
@@ -26,7 +28,7 @@ type Profile={id:string;username:string;displayName:string;email:string;ageGroup
 type View="collections"|"pokemon"|"friends"|"trades"|"profile";
 type Rates={USD:number;EUR:number};
 type ProfileResponse={profile:Profile};
-type CollectionItem={cardId:string;quantity:number};
+type CollectionItem={cardId:string;quantity:number;setId?:string;cardName?:string;cardImage?:string|null};
 type CollectionResponse={items?:CollectionItem[]};
 type RateResponse={rate?:number|string};
 type PricingVariant={marketPrice?:number;midPrice?:number};
@@ -44,18 +46,30 @@ type ProfileSaveResponse={profile?:Profile;error?:string};
 type FriendAction="request"|"accept";
 type FilterValue="all"|"owned"|"missing";
 type ScanResult={set:CardSet;card:Card};
+type ScanSaved={set:{id:string};card:Card};
 
 const FALLBACK_SETS:CardSet[]=[{id:"sv03.5",name:"Scarlet & Violet — 151",total:207,official:165},{id:"sv04",name:"Paradox Rift",total:266,official:182},{id:"sv03",name:"Obsidian Flames",total:230,official:197},{id:"sv02",name:"Paldea Evolved",total:279,official:193},{id:"sv01",name:"Scarlet & Violet",total:258,official:198}];
 const FALLBACK:Card[]=Array.from({length:207},(_,i)=>{const n=String(i+1).padStart(3,"0");return{id:`sv03.5-${n}`,localId:n,name:["Bulbasaur","Ivysaur","Venusaur ex","Charmander","Charmeleon","Charizard ex","Squirtle","Wartortle","Blastoise ex","Caterpie","Metapod","Butterfree"][i]||`Carta ${n}`,image:`https://assets.tcgdex.net/en/sv/sv03.5/${n}/high.webp`}});
 const FUTURE_COLLECTIONS=[{name:"Yu-Gi-Oh!",initial:"Y",tone:"from-amber-500 to-orange-700"},{name:"One Piece Card Game",initial:"O",tone:"from-sky-500 to-blue-800"},{name:"Magic: The Gathering",initial:"M",tone:"from-violet-500 to-indigo-800"}];
 const SIGN_IN="/entrar";
+const ALL_SETS="all";
+const META_KEY="reicard-owned-meta";
+const localIdOf=(cardId:string,setId:string)=>cardId.startsWith(`${setId}-`)?cardId.slice(setId.length+1):cardId;
+const setIdOf=(cardId:string)=>cardId.replace(/-[^-]+$/,"");
 
 export default function Home(){
   const[view,setView]=useState<View>("collections"),[setId,setSetId]=useState("sv03.5"),[sets,setSets]=useState<CardSet[]>(FALLBACK_SETS),[cards,setCards]=useState<Card[]>([]);
   const[quantities,setQuantities]=useState<Record<string,number>>({}),[query,setQuery]=useState(""),[filter,setFilter]=useState<FilterValue>("all"),[loading,setLoading]=useState(true);
   const[profile,setProfile]=useState<Profile|null>(null),[authChecked,setAuthChecked]=useState(false),[rates,setRates]=useState<Rates>({USD:0,EUR:0});
-  const[pendingScan,setPendingScan]=useState<{setId:string;cardName:string}|null>(null);
-  const set=sets.find(s=>s.id===setId) ?? FALLBACK_SETS[0]!;
+  const[pendingScan,setPendingScan]=useState<{setId:string;cardName:string}|null>(null),[ownedMeta,setOwnedMeta]=useState<Record<string,OwnedMeta>>({});
+  const attemptedMeta=useRef(new Set<string>());
+  const allMode=setId===ALL_SETS;
+  const ownedCards=useMemo<Card[]>(()=>Object.entries(quantities).filter(([,q])=>q>0).flatMap(([id])=>{const meta=ownedMeta[id];return meta?[{id,localId:meta.localId,name:meta.name,image:meta.image,setId:meta.setId}]:[]}).sort((a,b)=>a.localId.localeCompare(b.localId,undefined,{numeric:true,sensitivity:"base"})),[quantities,ownedMeta]);
+  const set=allMode?{id:ALL_SETS,name:"Todos os álbuns",total:ownedCards.length,official:0}:sets.find(s=>s.id===setId) ?? FALLBACK_SETS[0]!;
+  function rememberCards(entries:Array<{id:string;setId:string;name:string;localId:string;image?:string}>){
+    if(!entries.length)return;
+    setOwnedMeta(previous=>{const next={...previous};for(const entry of entries)next[entry.id]={setId:entry.setId,name:entry.name,localId:entry.localId,image:entry.image};try{localStorage.setItem(META_KEY,JSON.stringify(next))}catch{}return next});
+  }
 
   useEffect(()=>{
     let local:Record<string,number>={};
@@ -68,6 +82,7 @@ export default function Home(){
       }
       setQuantities(local);
     }catch{}
+    try{const meta=JSON.parse(localStorage.getItem(META_KEY)||"{}") as Record<string,OwnedMeta>;setOwnedMeta(meta)}catch{}
     void (async()=>{
       for(let attempt=0;attempt<3;attempt++){
         try{
@@ -91,6 +106,8 @@ export default function Home(){
       sessionStorage.removeItem("reicard-profile-cache");
       const collection=await fetch("/api/collection",{credentials:"include"}).then(async x=>x.ok?(await x.json()) as CollectionResponse:null);
       const items=collection?.items ?? [];
+      const known=items.flatMap(item=>item.setId&&item.cardName?[{id:item.cardId,setId:item.setId,name:item.cardName,localId:localIdOf(item.cardId,item.setId),image:item.cardImage??undefined}]:[]);
+      if(known.length)setOwnedMeta(prev=>{const next={...prev};for(const entry of known)next[entry.id]={setId:entry.setId,name:entry.name,localId:entry.localId,image:entry.image};try{localStorage.setItem(META_KEY,JSON.stringify(next))}catch{}return next});
       if(items.length)setQuantities(prev=>{const next={...prev};for(const item of items)next[item.cardId]=item.quantity;localStorage.setItem("reicard-quantities",JSON.stringify(next));return next});
     }).catch(error=>{
       console.error("Erro ao carregar perfil:", error);
@@ -112,6 +129,7 @@ export default function Home(){
     const cacheKey=`reicard-catalog-set-${setId}-v9`;
     setQuery(scanned?.cardName??"");
     setCards([]);
+    if(setId===ALL_SETS){setLoading(false);return()=>{active=false;window.clearTimeout(timeoutId)}}
     setLoading(true);
 
     async function loadSet(){
@@ -145,21 +163,46 @@ export default function Home(){
     return()=>{active=false;window.clearTimeout(timeoutId);controller.abort()};
   },[setId]);
 
+  useEffect(()=>{
+    if(!allMode)return;
+    const missing=Object.entries(quantities).filter(([id,q])=>q>0&&!ownedMeta[id]).map(([id])=>id);
+    const bySet=new Map<string,string[]>();
+    for(const id of missing){const sid=setIdOf(id);if(!attemptedMeta.current.has(sid))bySet.set(sid,[...(bySet.get(sid)??[]),id])}
+    for(const[sid,ids]of bySet){
+      attemptedMeta.current.add(sid);
+      fetch(`/api/catalog/set?id=${encodeURIComponent(sid)}&v=9`).then(async r=>r.ok?(await r.json()) as ApiSetDetails:null).then(data=>{
+        const found=(data?.cards??[]).filter(card=>ids.includes(card.id)).map(card=>({id:card.id,setId:sid,name:card.name,localId:card.localId,image:card.image?/\.(webp|png|jpe?g)$/i.test(card.image)?card.image:`${card.image}/low.webp`:undefined}));
+        rememberCards(found);
+      }).catch(()=>{});
+    }
+  },[allMode,quantities,ownedMeta]);
+
   function changeQuantity(card:Card,quantity:number){
     const qty=Math.max(0,Math.min(99,quantity));
+    const cardSetId=card.setId??setId;
+    if(qty)rememberCards([{id:card.id,setId:cardSetId,name:card.name,localId:card.localId,image:card.image}]);
     setQuantities(prev=>{const next={...prev};if(qty)next[card.id]=qty;else delete next[card.id];localStorage.setItem("reicard-quantities",JSON.stringify(next));return next});
-    if(profile)fetch("/api/collection",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cardId:card.id,setId,cardName:card.name,cardImage:card.image,quantity:qty}),credentials:"include"}).catch(()=>{});
+    if(profile)fetch("/api/collection",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cardId:card.id,setId:cardSetId,cardName:card.name,cardImage:card.image,quantity:qty}),credentials:"include"}).catch(()=>{});
   }
   function locateScan(result:ScanResult){
     if(result.set.id===setId){setQuery(result.card.name);setFilter("all");return}
     setPendingScan({setId:result.set.id,cardName:result.card.name});
     setSetId(result.set.id);
   }
-  function saveScannedCard(cardId:string,quantity:number){
+  function saveScannedCard(cardId:string,quantity:number,result?:ScanSaved){
+    if(result)rememberCards([{id:cardId,setId:result.set.id,name:result.card.name,localId:result.card.localId,image:result.card.image}]);
     setQuantities(previous=>{const next={...previous,[cardId]:quantity};localStorage.setItem("reicard-quantities",JSON.stringify(next));return next});
   }
-  const inSet=cards.filter(c=>(quantities[c.id]||0)>0).length;
-  const shown=useMemo(()=>cards.filter(c=>(c.name.toLowerCase().includes(query.toLowerCase())||c.localId.includes(query))&&(filter==="all"||(filter==="owned"?(quantities[c.id]||0)>0:(quantities[c.id]||0)===0))),[cards,query,filter,quantities]);
+  const albumCards=allMode?ownedCards:cards;
+  const inSet=albumCards.filter(c=>(quantities[c.id]||0)>0).length;
+  const shown=useMemo(()=>{
+    const search=parseSearch(query);
+    const setById=new Map(sets.map(item=>[item.id,item]));
+    return albumCards.filter(c=>{
+      if(allMode){const own=setById.get(c.setId??"");return matchesSearch(c,search,own)}
+      return matchesSearch(c,search)&&(filter==="all"||(filter==="owned"?(quantities[c.id]||0)>0:(quantities[c.id]||0)===0));
+    });
+  },[albumCards,query,filter,quantities,allMode,sets]);
   const uniqueOwned=Object.values(quantities).filter(q=>q>0).length;
   const repeats=Object.values(quantities).reduce((sum,q)=>sum+Math.max(0,q-1),0);
 
@@ -168,7 +211,7 @@ export default function Home(){
   return <main className="brand-shell min-h-screen text-[#071a3d]">
     <AppHeader profile={profile} authChecked={authChecked} onNavigate={setView}/>
     {view==="collections"?<CollectionsHome setCount={sets.length} ownedCount={uniqueOwned} repeats={repeats} onOpenPokemon={()=>setView("pokemon")} onFriends={()=>setView("friends")} onTrades={()=>setView("trades")}/>
-    :view==="pokemon"?<PokemonAlbum loggedIn={Boolean(profile)} set={set} sets={sets} setId={setId} setSetId={setSetId} cards={cards} shown={shown} quantities={quantities} inSet={inSet} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} loading={loading} changeQuantity={changeQuantity} rates={rates} onScanLocated={locateScan} onScanSaved={saveScannedCard} onBack={()=>setView("collections")} onFriends={()=>setView("friends")} onTrades={()=>setView("trades")}/>
+    :view==="pokemon"?<PokemonAlbum loggedIn={Boolean(profile)} set={set} sets={sets} setId={setId} setSetId={setSetId} cards={albumCards} shown={shown} quantities={quantities} inSet={inSet} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} loading={loading} changeQuantity={changeQuantity} rates={rates} onScanLocated={locateScan} onScanSaved={saveScannedCard} onBack={()=>setView("collections")} onFriends={()=>setView("friends")} onTrades={()=>setView("trades")}/>
     :view==="friends"?<FriendsHub profile={profile} onProfile={setProfile} onBack={()=>setView("collections")}/>
     :view==="trades"?<TradesHub profile={profile} sets={sets} onBack={()=>setView("collections")}/>
     :profile?<ProfileSetup profile={profile} onSaved={setProfile} onBack={()=>setView("collections")}/>:<SignInCard title="Entre no ReiCard" text="Crie seu perfil para salvar sua coleção em todos os aparelhos." onBack={()=>setView("collections")}/>}
@@ -194,16 +237,28 @@ function CollectionsHome({setCount,ownedCount,repeats,onOpenPokemon,onFriends,on
   </section>;
 }
 
-type AlbumProps={loggedIn:boolean;set:CardSet;sets:CardSet[];setId:string;setSetId:(id:string)=>void;cards:Card[];shown:Card[];quantities:Record<string,number>;inSet:number;query:string;setQuery:(value:string)=>void;filter:FilterValue;setFilter:(value:FilterValue)=>void;loading:boolean;changeQuantity:(card:Card,quantity:number)=>void;rates:Rates;onScanLocated:(result:ScanResult)=>void;onScanSaved:(cardId:string,quantity:number)=>void;onBack:()=>void;onFriends:()=>void;onTrades:()=>void};
+type AlbumProps={loggedIn:boolean;set:CardSet;sets:CardSet[];setId:string;setSetId:(id:string)=>void;cards:Card[];shown:Card[];quantities:Record<string,number>;inSet:number;query:string;setQuery:(value:string)=>void;filter:FilterValue;setFilter:(value:FilterValue)=>void;loading:boolean;changeQuantity:(card:Card,quantity:number)=>void;rates:Rates;onScanLocated:(result:ScanResult)=>void;onScanSaved:(cardId:string,quantity:number,result?:ScanSaved)=>void;onBack:()=>void;onFriends:()=>void;onTrades:()=>void};
 function PokemonAlbum({loggedIn,set,sets,setId,setSetId,cards,shown,quantities,inSet,query,setQuery,filter,setFilter,loading,changeQuantity,rates,onScanLocated,onScanSaved,onBack,onFriends,onTrades}:AlbumProps){
   const[albumSearch,setAlbumSearch]=useState("");
   const[albumPickerOpen,setAlbumPickerOpen]=useState(false);
-  const filteredSets=sets.filter(item=>item.name.toLowerCase().includes(albumSearch.toLowerCase()));
-  return <div className="mx-auto grid max-w-[1500px] lg:grid-cols-[220px_1fr]"><aside className="hidden min-h-[calc(100vh-64px)] border-r bg-white/90 p-5 lg:block"><nav className="space-y-1"><button className="nav w-full" onClick={onBack}><Grid2X2/>Coleções</button><span className="nav active"><LibraryBig/>Álbuns Pokémon</span><button className="nav w-full" onClick={onFriends}><Users/>Amigos</button><button className="nav w-full" onClick={onTrades}><Repeat2/>Trocas</button></nav><div className="brand-panel mt-8 rounded-2xl p-5 text-white"><p className="text-sm text-cyan-100">Álbum selecionado</p><p className="mt-1 font-bold">{set.name}</p><Progress value={set.total?inSet/set.total*100:0} className="mt-4 h-2"/><p className="mt-2 text-sm">{inSet} de {cards.length||set.total} cartas</p></div></aside>
+  const allMode=setId===ALL_SETS;
+  const albumQuery=parseSearch(albumSearch);
+  const filteredSets=sets.filter(item=>(!albumQuery.text.length||albumQuery.text.every(token=>item.name.toLowerCase().includes(token)))&&(!albumQuery.total||setHasTotal(item,albumQuery.total)));
+  const search=parseSearch(query);
+  const totalMismatch=!allMode&&Boolean(search.total)&&!setHasTotal(set,search.total);
+  const groups=useMemo(()=>{
+    if(!allMode)return[];
+    const byId=new Map<string,Card[]>();
+    for(const card of shown)byId.set(card.setId??"",[...(byId.get(card.setId??"")??[]),card]);
+    const known=sets.filter(item=>byId.has(item.id)).map(item=>({set:item,cards:byId.get(item.id)!}));
+    const unknown=[...byId.entries()].filter(([id])=>!sets.some(item=>item.id===id)).map(([id,list])=>({set:{id,name:id,total:list.length,official:0},cards:list}));
+    return[...known,...unknown];
+  },[allMode,shown,sets]);  return <div className="mx-auto grid max-w-[1500px] lg:grid-cols-[220px_1fr]"><aside className="hidden min-h-[calc(100vh-64px)] border-r bg-white/90 p-5 lg:block"><nav className="space-y-1"><button className="nav w-full" onClick={onBack}><Grid2X2/>Coleções</button><span className="nav active"><LibraryBig/>Álbuns Pokémon</span><button className="nav w-full" onClick={onFriends}><Users/>Amigos</button><button className="nav w-full" onClick={onTrades}><Repeat2/>Trocas</button></nav><div className="brand-panel mt-8 rounded-2xl p-5 text-white"><p className="text-sm text-cyan-100">Álbum selecionado</p><p className="mt-1 font-bold">{set.name}</p>{allMode?<p className="mt-3 text-sm">{inSet} cartas únicas em {groups.length||"seus"} álbuns</p>:<><Progress value={set.total?inSet/set.total*100:0} className="mt-4 h-2"/><p className="mt-2 text-sm">{inSet} de {cards.length||set.total} cartas</p></>}</div></aside>
     <section className="min-w-0 p-4 sm:p-7"><button onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-[#071a3d] lg:hidden"><ArrowLeft className="h-4 w-4"/>Minhas coleções</button><div className="mb-5"><p className="brand-kicker text-sm font-black uppercase tracking-[.16em]">POKÉMON</p><h1 className="mt-1 text-3xl font-black">Escolha e marque suas cartas</h1><p className="mt-1 text-slate-500">Use + e − para informar a quantidade. A partir de 2, a carta aparece para troca.</p></div>
-      <div className="album-toolbar mb-5 grid gap-3 rounded-2xl p-4 md:grid-cols-[1fr_1fr_auto] xl:grid-cols-[1fr_1fr_auto_auto] 2xl:grid-cols-[1fr_1fr_auto_auto_auto]"><Popover open={albumPickerOpen} onOpenChange={setAlbumPickerOpen}><PopoverTrigger asChild><Button variant="outline" className="h-11 justify-between bg-white text-left"><span className="truncate">{set.name} · {set.total} cartas</span><ChevronDown className="ml-2 h-4 w-4 shrink-0"/></Button></PopoverTrigger><PopoverContent className="w-[min(90vw,420px)] p-2" align="start"><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-violet-500"/><Input autoFocus className="h-10 pl-9" placeholder="Pesquisar álbum" value={albumSearch} onChange={e=>setAlbumSearch(e.target.value)}/></div><div className="mt-2 max-h-72 overflow-y-auto">{filteredSets.length?filteredSets.map(item=><button type="button" key={item.id} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-violet-50 ${item.id===setId?"bg-violet-100 font-bold text-violet-900":""}`} onClick={()=>{setSetId(item.id);setAlbumPickerOpen(false)}}><span className="truncate">{item.name}</span><span className="ml-3 shrink-0 text-xs text-slate-500">{item.total}</span></button>):<p className="p-3 text-sm text-slate-500">Nenhum álbum encontrado.</p>}</div></PopoverContent></Popover><div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-violet-500"/><Input className="h-11 bg-white pl-9" placeholder="Nome, número ou consulte o preço" value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="flex rounded-lg bg-white/75 p-1">{([["all","Todas"],["owned","Tenho"],["missing","Faltam"]] as const).map(([v,l])=><Button key={v} size="sm" variant={filter===v?"default":"ghost"} onClick={()=>setFilter(v)}>{l}</Button>)}</div><CardScanner sets={sets} currentSetId={setId} rates={rates} quantities={quantities} onLocated={onScanLocated} onSaved={onScanSaved}/><ShareCollection loggedIn={loggedIn} set={set} cards={cards} quantities={quantities}/></div>
-      <div className="mb-5 flex items-center justify-between"><div><b>{set.name}</b><span className="ml-2 text-sm text-slate-500">{shown.length} exibidas</span></div><Badge className="bg-green-100 text-green-800 hover:bg-green-100">{inSet}/{cards.length||set.total} tenho</Badge></div>
-      {loading?<Loading/>:cards.length===0?<div className="rounded-2xl border bg-white p-12 text-center">Esta coleção ainda não pôde ser carregada.</div>:<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">{shown.map(c=><CardTile key={c.id} card={c} cardSet={set} quantity={quantities[c.id]||0} setQuantity={q=>changeQuantity(c,q)} rates={rates}/>)}</div>}<Footer/>
+      <div className="album-toolbar mb-5 grid gap-3 rounded-2xl p-4 md:grid-cols-[1fr_1fr_auto] xl:grid-cols-[1fr_1fr_auto_auto] 2xl:grid-cols-[1fr_1fr_auto_auto_auto]"><Popover open={albumPickerOpen} onOpenChange={setAlbumPickerOpen}><PopoverTrigger asChild><Button variant="outline" className="h-11 justify-between bg-white text-left"><span className="truncate">{allMode?`Todos os álbuns · ${inSet} cartas minhas`:`${set.name} · ${set.total} cartas`}</span><ChevronDown className="ml-2 h-4 w-4 shrink-0"/></Button></PopoverTrigger><PopoverContent className="w-[min(90vw,420px)] p-2" align="start"><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-violet-500"/><Input autoFocus className="h-10 pl-9" placeholder="Pesquisar álbum" value={albumSearch} onChange={e=>setAlbumSearch(e.target.value)}/></div><div className="mt-2 max-h-72 overflow-y-auto"><button type="button" className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-violet-50 ${allMode?"bg-violet-100 text-violet-900":"text-violet-700"}`} onClick={()=>{setSetId(ALL_SETS);setAlbumPickerOpen(false)}}><span className="flex items-center gap-2"><LibraryBig className="h-4 w-4"/>Todos os álbuns juntos</span><span className="ml-3 shrink-0 text-xs font-semibold text-slate-500">minha coleção</span></button>{filteredSets.length?filteredSets.map(item=><button type="button" key={item.id} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-violet-50 ${item.id===setId?"bg-violet-100 font-bold text-violet-900":""}`} onClick={()=>{setSetId(item.id);setAlbumPickerOpen(false)}}><span className="truncate">{item.name}</span><span className="ml-3 shrink-0 text-xs text-slate-500">{item.total}</span></button>):<p className="p-3 text-sm text-slate-500">Nenhum álbum encontrado.</p>}</div></PopoverContent></Popover><div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-violet-500"/><Input className="h-11 bg-white pl-9" placeholder="Nome ou número (ex.: 30/120)" value={query} onChange={e=>setQuery(e.target.value)}/></div>{!allMode&&<div className="flex rounded-lg bg-white/75 p-1">{([["all","Todas"],["owned","Tenho"],["missing","Faltam"]] as const).map(([v,l])=><Button key={v} size="sm" variant={filter===v?"default":"ghost"} onClick={()=>setFilter(v)}>{l}</Button>)}</div>}<CardScanner sets={sets} currentSetId={setId} rates={rates} quantities={quantities} onLocated={onScanLocated} onSaved={onScanSaved}/>{!allMode&&<ShareCollection loggedIn={loggedIn} set={set} cards={cards} quantities={quantities}/>}</div>
+      {totalMismatch&&<p className="mb-4 rounded-lg bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">O total {search.total} não confere com este álbum ({set.official||set.total} cartas). Mostrando o número {search.number||"—"} daqui; use &ldquo;Todos os álbuns juntos&rdquo; para buscar entre os que você tem.</p>}
+      <div className="mb-5 flex items-center justify-between"><div><b>{set.name}</b><span className="ml-2 text-sm text-slate-500">{shown.length} exibidas</span></div><Badge className="bg-green-100 text-green-800 hover:bg-green-100">{allMode?`${inSet} cartas`:`${inSet}/${cards.length||set.total} tenho`}</Badge></div>
+      {loading?<Loading/>:allMode?(shown.length===0?<div className="rounded-2xl border bg-white p-12 text-center text-slate-500">{hasSearch(search)?"Nenhuma carta sua corresponde à busca.":"Marque cartas nos álbuns e elas aparecem aqui, todas juntas."}</div>:<div className="space-y-8">{groups.map(group=><section key={group.set.id}><h2 className="mb-3 flex items-baseline gap-2 text-lg font-black">{group.set.name}<span className="text-sm font-semibold text-slate-500">{group.cards.length} {group.cards.length===1?"carta":"cartas"}</span></h2><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">{group.cards.map(c=><CardTile key={c.id} card={c} cardSet={group.set} quantity={quantities[c.id]||0} setQuantity={q=>changeQuantity(c,q)} rates={rates}/>)}</div></section>)}</div>):cards.length===0?<div className="rounded-2xl border bg-white p-12 text-center">Esta coleção ainda não pôde ser carregada.</div>:<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">{shown.map(c=><CardTile key={c.id} card={c} cardSet={set} quantity={quantities[c.id]||0} setQuantity={q=>changeQuantity(c,q)} rates={rates}/>)}</div>}<Footer/>
     </section>
   </div>;
 }
