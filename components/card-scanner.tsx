@@ -47,13 +47,25 @@ function readPrintedNumbers(text:string){
   return found.filter((item,index,list)=>list.findIndex(other=>other.number===item.number&&other.total===item.total)===index);
 }
 
+function nameTokens(card:ScannerCard){
+  return clean(card.name).split(" ").filter(token=>token.length>2);
+}
+
+// Evita aceitar um "match" só porque o total bateu por acaso com leitura ruim de OCR
+// (ex.: brilho de carta holo confundido com números) — exige que o nome apareça no texto lido.
+function nameHit(text:string,card:ScannerCard){
+  const haystack=haystackFor(text);
+  const name=clean(card.name);
+  if(name&&haystack.includes(` ${name} `))return true;
+  return nameTokens(card).some(token=>haystack.includes(` ${token} `));
+}
+
 function matchScore(text:string,set:ScannerSet,card:ScannerCard,exactTotal:boolean){
   const haystack=haystackFor(text);
   const name=clean(card.name);
-  const tokens=name.split(" ").filter(token=>token.length>2);
   let score=20;
   if(name&&haystack.includes(` ${name} `))score+=100;
-  score+=tokens.filter(token=>haystack.includes(` ${token} `)).length*12;
+  score+=nameTokens(card).filter(token=>haystack.includes(` ${token} `)).length*12;
   score+=clean(set.name).split(" ").filter(token=>token.length>3&&haystack.includes(` ${token} `)).length*3;
   if(card.hp&&new RegExp(`\\b(ps|hp)\\s*${card.hp}\\b`).test(haystack))score+=18;
   if(exactTotal)score+=30;
@@ -211,7 +223,7 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
       }else{
         const standalone=readStandaloneNumbers(numberText);
         if(!standalone.length)throw new Error("number_not_found");
-        await locateByNumber(standalone,fullText);
+        await locateByNumber(standalone,fullText,true);
       }
     }catch(reason){
       fail(reason,false);
@@ -262,13 +274,14 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
 
     const matches=await resolveMatches(candidateSets,(set,card)=>{
       if(!printed.some(item=>cardNumber(card.localId)===item.number))return null;
+      if(!nameHit(fullText,card))return null;
       const exact=matchesTotal(set,totals,0);
       return matchScore(fullText,set,card,exact&&exactTotal)+(set.id===currentSetId?8:0);
     });
     await applyMatches(matches);
   }
 
-  async function locateByNumber(numbers:number[],fullText:string){
+  async function locateByNumber(numbers:number[],fullText:string,requireNameHit:boolean){
     setStatus("Procurando nos álbuns físicos...");
 
     let candidateSets=sets.filter(set=>set.official<=0);
@@ -280,7 +293,11 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
     if(current&&!candidateSets.some(set=>set.id===current.id))candidateSets=[...candidateSets,current];
     if(!candidateSets.length)throw new Error("set_not_found");
 
-    const matches=await resolveMatches(candidateSets,(set,card)=>numbers.includes(cardNumber(card.localId))?matchScore(fullText,set,card,false)+(set.id===currentSetId?8:0):null);
+    const matches=await resolveMatches(candidateSets,(set,card)=>{
+      if(!numbers.includes(cardNumber(card.localId)))return null;
+      if(requireNameHit&&!nameHit(fullText,card))return null;
+      return matchScore(fullText,set,card,false)+(set.id===currentSetId?8:0);
+    });
     await applyMatches(matches);
   }
 
@@ -333,7 +350,7 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
     clearResults();
     try{
       if(withTotal)await locate([{number:Number(withTotal[1]),total:Number(withTotal[2])}],"");
-      else await locateByNumber([Number(numberOnly![1])],"");
+      else await locateByNumber([Number(numberOnly![1])],"",false);
     }catch(reason){fail(reason,true)}
   }
 
