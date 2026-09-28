@@ -2,6 +2,10 @@
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
+/* App is light-only (no theme toggle): make `dark:` class-scoped instead of following the OS/browser dark mode, so shadcn components (dialog, buttons, inputs) never flip while the rest of the UI stays light. Nothing ever adds a `.dark` class, so this permanently keeps the app light. */
+@custom-variant dark (&:where(.dark, .dark *));
+html { color-scheme: light; }
+
 /* Scanner: give a photographed card useful space instead of a narrow thumbnail. */
 [data-slot="dialog-content"]:has(img[alt="Carta fotografada"]){max-width:min(64rem,calc(100% - 1.5rem));max-height:94vh;padding:1.5rem}
 [data-slot="dialog-content"]:has(img[alt="Carta fotografada"]) .grid:has(>img[alt="Carta fotografada"]){grid-template-columns:minmax(240px,340px) minmax(0,1fr);gap:1.5rem}
@@ -103,42 +107,6 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-ser
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --card: #171717;
-    --card-foreground: #ededed;
-    --popover: #171717;
-    --popover-foreground: #ededed;
-    --primary: #ededed;
-    --primary-foreground: #171717;
-    --secondary: #262626;
-    --secondary-foreground: #ededed;
-    --muted: #262626;
-    --muted-foreground: #a1a1a1;
-    --accent: #262626;
-    --accent-foreground: #ededed;
-    --destructive: #ff6467;
-    --border: #ffffff1a;
-    --input: #ffffff26;
-    --ring: #737373;
-    --chart-1: #8e51ff;
-    --chart-2: #00bc7d;
-    --chart-3: #fe9a00;
-    --chart-4: #ad46ff;
-    --chart-5: #ff2056;
-    --sidebar: #171717;
-    --sidebar-foreground: #ededed;
-    --sidebar-primary: #8e51ff;
-    --sidebar-primary-foreground: #ededed;
-    --sidebar-accent: #262626;
-    --sidebar-accent-foreground: #ededed;
-    --sidebar-border: #ffffff1a;
-    --sidebar-ring: #737373;
-  }
 }
 
 body {

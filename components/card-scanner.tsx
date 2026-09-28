@@ -110,6 +110,15 @@ async function prepareRegions(file:File){
   }finally{URL.revokeObjectURL(source)}
 }
 
+function readStandaloneNumbers(text:string){
+  const normalized=text.toUpperCase()
+    .replace(/[OQ]/g,"0").replace(/[IL|]/g,"1").replace(/S/g,"5").replace(/B/g,"8").replace(/G/g,"6").replace(/Z/g,"2");
+  const found=[...normalized.matchAll(/(?<![\d/])(\d{1,3})(?![\d/])/g)]
+    .map(match=>Number(match[1]))
+    .filter(value=>value>0);
+  return[...new Set(found)].slice(0,8);
+}
+
 function collectorNumber(result:ScanResult){
   const {card,set}=result;
   if(!/^\d+$/.test(card.localId)||set.official<=0)return card.localId;
@@ -196,9 +205,14 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
 
       const numberText=`${wideText}\n${leftText}\n${tightText}`;
       const printed=readPrintedNumbers(numberText);
-      if(!printed.length)throw new Error("number_not_found");
       setStatus("Procurando nos álbuns físicos...");
-      await locate(printed,fullText);
+      if(printed.length){
+        await locate(printed,fullText);
+      }else{
+        const standalone=readStandaloneNumbers(numberText);
+        if(!standalone.length)throw new Error("number_not_found");
+        await locateByNumber(standalone,fullText);
+      }
     }catch(reason){
       fail(reason,false);
     }finally{if(worker)await worker.terminate()}
@@ -254,7 +268,7 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
     await applyMatches(matches);
   }
 
-  async function locateByNumber(number:number){
+  async function locateByNumber(numbers:number[],fullText:string){
     setStatus("Procurando nos álbuns físicos...");
 
     let candidateSets=sets.filter(set=>set.official<=0);
@@ -266,7 +280,7 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
     if(current&&!candidateSets.some(set=>set.id===current.id))candidateSets=[...candidateSets,current];
     if(!candidateSets.length)throw new Error("set_not_found");
 
-    const matches=await resolveMatches(candidateSets,(set,card)=>cardNumber(card.localId)===number?matchScore("",set,card,false)+(set.id===currentSetId?8:0):null);
+    const matches=await resolveMatches(candidateSets,(set,card)=>numbers.includes(cardNumber(card.localId))?matchScore(fullText,set,card,false)+(set.id===currentSetId?8:0):null);
     await applyMatches(matches);
   }
 
@@ -319,7 +333,7 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
     clearResults();
     try{
       if(withTotal)await locate([{number:Number(withTotal[1]),total:Number(withTotal[2])}],"");
-      else await locateByNumber(Number(numberOnly![1]));
+      else await locateByNumber([Number(numberOnly![1])],"");
     }catch(reason){fail(reason,true)}
   }
 
@@ -339,7 +353,7 @@ export function CardScanner({sets,currentSetId,rates,quantities,onLocated,onSave
 
   const busy=Boolean(status)&&!results.length&&!error;
   const feedback=<>{status&&<><div className="flex items-center gap-2 font-bold text-[#071a3d]">{results.length?<CheckCircle2 className="h-5 w-5 text-green-600"/>:<Loader2 className="h-5 w-5 animate-spin text-violet-600"/>}{status}</div>{!results.length&&<div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-600 transition-all" style={{width:`${Math.max(8,progress)}%`}}/></div>}</>}{error&&<p className="text-sm font-semibold leading-relaxed text-red-600">{error}</p>}</>;
-  const codeSearch=<div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-sm font-bold text-[#071a3d]">{results.length?"Não é esta carta? Pesquise pelo código":"Ou pesquise pelo código da carta"}</p><div className="mt-2 flex gap-2"><input value={manualNumber} onChange={event=>setManualNumber(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void searchByCode()}} placeholder="Ex.: 027/147 ou 071" inputMode="text" aria-label="Código da carta" className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm"/><Button type="button" variant="secondary" className="shrink-0 gap-2" disabled={busy||!manualNumber.trim()} onClick={()=>void searchByCode()}><Search className="h-4 w-4"/>Pesquisar código</Button></div><p className="mt-1 text-xs text-slate-500">Use o número impresso na base da carta, no formato 027/147. Em promocionais sem total impresso, digite só o número (ex.: 071).</p></div>;
+  const codeSearch=<div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-sm font-bold text-[#071a3d]">{results.length?"Não é esta carta? Pesquise pelo código":"Ou pesquise pelo código da carta"}</p><div className="mt-2 flex gap-2"><input value={manualNumber} onChange={event=>setManualNumber(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void searchByCode()}} placeholder="Ex.: 027/147 ou 071" inputMode="text" aria-label="Código da carta" className="h-10 min-w-0 flex-1 rounded-md border-2 border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-200"/><Button type="button" variant="secondary" className="shrink-0 gap-2" disabled={busy||!manualNumber.trim()} onClick={()=>void searchByCode()}><Search className="h-4 w-4"/>Pesquisar código</Button></div><p className="mt-1 text-xs text-slate-500">Use o número impresso na base da carta, no formato 027/147. Em promocionais sem total impresso, digite só o número (ex.: 071).</p></div>;
 
   return <Dialog open={open} onOpenChange={value=>{setOpen(value);if(!value)reset()}}><DialogTrigger asChild><Button className="brand-button h-11 gap-2 whitespace-nowrap"><ScanLine className="h-5 w-5"/>Escanear carta</Button></DialogTrigger><DialogContent className="max-h-[94vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto p-5 sm:p-7"><DialogHeader><DialogTitle className="flex items-center gap-2"><Camera className="h-5 w-5 text-violet-600"/>Localizar carta pela câmera</DialogTitle><DialogDescription>Fotografe a frente inteira da carta. O ReiCard lerá a numeração e buscará o álbum físico correto.</DialogDescription></DialogHeader>
     <div className="space-y-4">
